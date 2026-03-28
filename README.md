@@ -18,14 +18,14 @@ It provides:
 
 This package only contains `WeaponSkin.Menu`.
 
-Install these separately if your server does not already have them:
+Expected server prerequisites:
 
+- a normal `ModSharp` installation:
+  [modsharp-public](https://github.com/modsharp-project/modsharp-public)
 - original `WeaponSkin` release:
-  [Ariiisu/WeaponSkin](https://github.com/Ariiisu/WeaponSkin/releases)
-- `MenuManager` module source:
-  [modsharp-public/Sharp.Modules/MenuManager](https://github.com/modsharp-project/modsharp-public/tree/master/Sharp.Modules/MenuManager)
-- `LocalizerManager` module source:
-  [modsharp-public/Sharp.Modules/LocalizerManager](https://github.com/modsharp-project/modsharp-public/tree/master/Sharp.Modules/LocalizerManager)
+  [Ariiisu/WeaponSkin releases](https://github.com/Ariiisu/WeaponSkin/releases)
+
+`MenuManager` and `LocalizerManager` are treated as part of the normal ModSharp module set on the target server.
 
 `WeaponSkin.Shared.dll` is already included in the original `WeaponSkin` release package under:
 
