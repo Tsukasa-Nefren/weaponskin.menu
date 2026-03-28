@@ -13,8 +13,8 @@ A ModSharp plugin for Counter-Strike 2 servers. Adds an in-game menu for `Weapon
 
 **Core**
 - .NET 10.0
-- ModSharp 2.x
-- WeaponSkin
+- [ModSharp 2.x](https://github.com/Kxnrl/modsharp-public)
+- [WeaponSkin](https://github.com/Ariiisu/WeaponSkin/releases)
 
 **Plugin Dependencies**
 - MenuManager
@@ -24,7 +24,7 @@ A ModSharp plugin for Counter-Strike 2 servers. Adds an in-game menu for `Weapon
 
 1. Download the latest release from the [Releases](https://github.com/Tsukasa-Nefren/weaponskin-menu-private/releases) page.
 2. Extract the `.zip` file into your server's root directory so the `sharp` folder merges automatically.
-3. Make sure `WeaponSkin` is already installed on the server.
+3. Make sure [WeaponSkin](https://github.com/Ariiisu/WeaponSkin/releases) is already installed on the server.
 4. Start or reload the server.
 
 **Directory Structure:**
