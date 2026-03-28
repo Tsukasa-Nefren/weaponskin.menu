@@ -16,11 +16,20 @@ It provides:
 
 ## Requirements
 
-- original `WeaponSkin`
-- original `WeaponSkin.Request.Sql`
-- `WeaponSkin.Shared.dll`
-- `MenuManager`
-- `LocalizerManager`
+This package only contains `WeaponSkin.Menu`.
+
+Install these separately if your server does not already have them:
+
+- original `WeaponSkin` release:
+  [Ariiisu/WeaponSkin](https://github.com/Ariiisu/WeaponSkin/releases)
+- `MenuManager` module source:
+  [modsharp-public/Sharp.Modules/MenuManager](https://github.com/modsharp-project/modsharp-public/tree/master/Sharp.Modules/MenuManager)
+- `LocalizerManager` module source:
+  [modsharp-public/Sharp.Modules/LocalizerManager](https://github.com/modsharp-project/modsharp-public/tree/master/Sharp.Modules/LocalizerManager)
+
+`WeaponSkin.Shared.dll` is already included in the original `WeaponSkin` release package under:
+
+- `shared/WeaponSkin.Shared`
 
 ## Build
 
