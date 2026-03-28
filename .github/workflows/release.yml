@@ -55,20 +55,44 @@ jobs:
           "previous=$previousVersion" >> $env:GITHUB_OUTPUT
           "changed=$($versionChanged.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
 
+      - name: Check existing release
+        id: release_check
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $headers = @{
+            Authorization = "Bearer $env:GITHUB_TOKEN"
+            Accept = 'application/vnd.github+json'
+            'X-GitHub-Api-Version' = '2022-11-28'
+            'User-Agent' = 'github-actions'
+          }
+
+          $uri = "https://api.github.com/repos/${{ github.repository }}/releases/tags/$version"
+
+          try {
+            Invoke-RestMethod -Uri $uri -Headers $headers | Out-Null
+            "exists=true" >> $env:GITHUB_OUTPUT
+          }
+          catch {
+            "exists=false" >> $env:GITHUB_OUTPUT
+          }
+
       - name: Stop when version did not change
-        if: github.event_name != 'workflow_dispatch' && steps.version.outputs.changed != 'true'
+        if: github.event_name != 'workflow_dispatch' && steps.version.outputs.changed != 'true' && steps.release_check.outputs.exists == 'true'
         shell: pwsh
         run: |
           Write-Host "Version did not change. Skipping release."
 
       - name: Setup .NET
-        if: github.event_name == 'workflow_dispatch' || steps.version.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.version.outputs.changed == 'true' || steps.release_check.outputs.exists != 'true'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
 
       - name: Download original WeaponSkin release
-        if: github.event_name == 'workflow_dispatch' || steps.version.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.version.outputs.changed == 'true' || steps.release_check.outputs.exists != 'true'
         id: weaponskin
         shell: pwsh
         run: |
@@ -101,7 +125,7 @@ jobs:
           "source_release=$($release.html_url)" >> $env:GITHUB_OUTPUT
 
       - name: Build WeaponSkin.Menu
-        if: github.event_name == 'workflow_dispatch' || steps.version.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.version.outputs.changed == 'true' || steps.release_check.outputs.exists != 'true'
         shell: pwsh
         run: |
           dotnet build .\WeaponSkin.Menu.csproj `
@@ -109,7 +133,7 @@ jobs:
             /p:WeaponSkinSharedHintPath="${{ steps.weaponskin.outputs.shared_dll }}"
 
       - name: Create sharp-root package
-        if: github.event_name == 'workflow_dispatch' || steps.version.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.version.outputs.changed == 'true' || steps.release_check.outputs.exists != 'true'
         id: package
         shell: pwsh
         run: |
@@ -150,7 +174,7 @@ jobs:
           "zip_name=WeaponSkin.Menu.zip" >> $env:GITHUB_OUTPUT
 
       - name: Create or update release
-        if: github.event_name == 'workflow_dispatch' || steps.version.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.version.outputs.changed == 'true' || steps.release_check.outputs.exists != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
