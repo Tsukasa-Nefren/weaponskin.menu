@@ -1,0 +1,318 @@
+[
+  {
+    "id": 6030,
+    "name": "Aces High Pin"
+  },
+  {
+    "id": 6130,
+    "name": "Aces High Pin"
+  },
+  {
+    "id": 6034,
+    "name": "Alyx Pin"
+  },
+  {
+    "id": 6134,
+    "name": "Alyx Pin"
+  },
+  {
+    "id": 6014,
+    "name": "Baggage Pin"
+  },
+  {
+    "id": 6114,
+    "name": "Baggage Pin"
+  },
+  {
+    "id": 4690,
+    "name": "Black Mesa Pin"
+  },
+  {
+    "id": 6019,
+    "name": "Bloodhound Pin"
+  },
+  {
+    "id": 6119,
+    "name": "Bloodhound Pin"
+  },
+  {
+    "id": 6013,
+    "name": "Bravo Pin"
+  },
+  {
+    "id": 6113,
+    "name": "Bravo Pin"
+  },
+  {
+    "id": 6033,
+    "name": "Brigadier General Pin"
+  },
+  {
+    "id": 6133,
+    "name": "Brigadier General Pin"
+  },
+  {
+    "id": 6020,
+    "name": "Cache Pin"
+  },
+  {
+    "id": 6120,
+    "name": "Cache Pin"
+  },
+  {
+    "id": 6024,
+    "name": "Canals Pin"
+  },
+  {
+    "id": 6124,
+    "name": "Canals Pin"
+  },
+  {
+    "id": 6022,
+    "name": "Chroma Pin"
+  },
+  {
+    "id": 6122,
+    "name": "Chroma Pin"
+  },
+  {
+    "id": 4692,
+    "name": "City 17 Pin"
+  },
+  {
+    "id": 4682,
+    "name": "Civil Protection Pin"
+  },
+  {
+    "id": 4689,
+    "name": "CMB Pin"
+  },
+  {
+    "id": 6017,
+    "name": "Cobblestone Pin"
+  },
+  {
+    "id": 6117,
+    "name": "Cobblestone Pin"
+  },
+  {
+    "id": 4691,
+    "name": "Combine Helmet Pin"
+  },
+  {
+    "id": 4688,
+    "name": "Copper Lambda Pin"
+  },
+  {
+    "id": 6026,
+    "name": "Death Sentence Pin"
+  },
+  {
+    "id": 6126,
+    "name": "Death Sentence Pin"
+  },
+  {
+    "id": 6001,
+    "name": "Dust II Pin"
+  },
+  {
+    "id": 6101,
+    "name": "Dust II Pin"
+  },
+  {
+    "id": 6029,
+    "name": "Easy Peasy Pin"
+  },
+  {
+    "id": 6129,
+    "name": "Easy Peasy Pin"
+  },
+  {
+    "id": 6012,
+    "name": "Guardian 2 Pin"
+  },
+  {
+    "id": 6112,
+    "name": "Guardian 2 Pin"
+  },
+  {
+    "id": 6023,
+    "name": "Guardian 3 Pin"
+  },
+  {
+    "id": 6123,
+    "name": "Guardian 3 Pin"
+  },
+  {
+    "id": 6002,
+    "name": "Guardian Elite Pin"
+  },
+  {
+    "id": 6102,
+    "name": "Guardian Elite Pin"
+  },
+  {
+    "id": 6010,
+    "name": "Guardian Pin"
+  },
+  {
+    "id": 6110,
+    "name": "Guardian Pin"
+  },
+  {
+    "id": 4685,
+    "name": "Headcrab Glyph Pin"
+  },
+  {
+    "id": 4686,
+    "name": "Health Pin"
+  },
+  {
+    "id": 6032,
+    "name": "Howl Pin"
+  },
+  {
+    "id": 6132,
+    "name": "Howl Pin"
+  },
+  {
+    "id": 6031,
+    "name": "Hydra Pin"
+  },
+  {
+    "id": 6131,
+    "name": "Hydra Pin"
+  },
+  {
+    "id": 6027,
+    "name": "Inferno 2 Pin"
+  },
+  {
+    "id": 6127,
+    "name": "Inferno 2 Pin"
+  },
+  {
+    "id": 6004,
+    "name": "Inferno Pin"
+  },
+  {
+    "id": 6104,
+    "name": "Inferno Pin"
+  },
+  {
+    "id": 6005,
+    "name": "Italy Pin"
+  },
+  {
+    "id": 6105,
+    "name": "Italy Pin"
+  },
+  {
+    "id": 4687,
+    "name": "Lambda Pin"
+  },
+  {
+    "id": 6007,
+    "name": "Militia Pin"
+  },
+  {
+    "id": 6107,
+    "name": "Militia Pin"
+  },
+  {
+    "id": 6003,
+    "name": "Mirage Pin"
+  },
+  {
+    "id": 6103,
+    "name": "Mirage Pin"
+  },
+  {
+    "id": 6008,
+    "name": "Nuke Pin"
+  },
+  {
+    "id": 6108,
+    "name": "Nuke Pin"
+  },
+  {
+    "id": 6016,
+    "name": "Office Pin"
+  },
+  {
+    "id": 6116,
+    "name": "Office Pin"
+  },
+  {
+    "id": 6018,
+    "name": "Overpass Pin"
+  },
+  {
+    "id": 6118,
+    "name": "Overpass Pin"
+  },
+  {
+    "id": 6015,
+    "name": "Phoenix Pin"
+  },
+  {
+    "id": 6115,
+    "name": "Phoenix Pin"
+  },
+  {
+    "id": 4683,
+    "name": "Sustenance! Pin"
+  },
+  {
+    "id": 6011,
+    "name": "Tactics Pin"
+  },
+  {
+    "id": 6111,
+    "name": "Tactics Pin"
+  },
+  {
+    "id": 6009,
+    "name": "Train Pin"
+  },
+  {
+    "id": 6109,
+    "name": "Train Pin"
+  },
+  {
+    "id": 6021,
+    "name": "Valeria Phoenix Pin"
+  },
+  {
+    "id": 6121,
+    "name": "Valeria Phoenix Pin"
+  },
+  {
+    "id": 6006,
+    "name": "Victory Pin"
+  },
+  {
+    "id": 6106,
+    "name": "Victory Pin"
+  },
+  {
+    "id": 4684,
+    "name": "Vortigaunt Pin"
+  },
+  {
+    "id": 6025,
+    "name": "Welcome to the Clutch Pin"
+  },
+  {
+    "id": 6125,
+    "name": "Welcome to the Clutch Pin"
+  },
+  {
+    "id": 6028,
+    "name": "Wildfire Pin"
+  },
+  {
+    "id": 6128,
+    "name": "Wildfire Pin"
+  }
+]
