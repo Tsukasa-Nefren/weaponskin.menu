@@ -12,7 +12,7 @@ It adds:
 
 ## Requirements
 
-- [ModSharp](https://github.com/modsharp-project/modsharp-public)
+- [ModSharp](https://github.com/Kxnrl/modsharp-public)
 - [WeaponSkin](https://github.com/Ariiisu/WeaponSkin/releases)
 - `WeaponSkin.Shared`
 
