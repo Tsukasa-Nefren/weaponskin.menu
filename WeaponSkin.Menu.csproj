@@ -3,7 +3,7 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <LangVersion>13</LangVersion>
-    <Version>0.1.0</Version>
+    <Version>1.0.0</Version>
     <AssemblyName>WeaponSkin.Menu</AssemblyName>
     <RootNamespace>WeaponSkin.Menu</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
