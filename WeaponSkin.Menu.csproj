@@ -1,0 +1,154 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>13</LangVersion>
+    <Version>1.0.0</Version>
+    <AssemblyName>WeaponSkin.Menu</AssemblyName>
+    <RootNamespace>WeaponSkin.Menu</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <DeploymentRoot>$(MSBuildProjectDirectory)\bin\$(Configuration)\$(TargetFramework)\</DeploymentRoot>
+    <OutputPath>$(DeploymentRoot)modules\$(AssemblyName)\</OutputPath>
+    <WorkspaceWeaponSkinSharedHintPath>$(MSBuildProjectDirectory)\..\WeaponSkin-master\WeaponSkin.Shared\bin\$(Configuration)\net10.0\WeaponSkin.Shared.dll</WorkspaceWeaponSkinSharedHintPath>
+    <ServerWeaponSkinSharedHintPath>D:\AMPDatastore\Instances\modsharp01\counter-strike2\730\game\sharp\shared\WeaponSkin.Shared\WeaponSkin.Shared.dll</ServerWeaponSkinSharedHintPath>
+    <WeaponSkinSharedHintPath Condition="'$(WeaponSkinSharedHintPath)' == '' and Exists('$(WorkspaceWeaponSkinSharedHintPath)')">$(WorkspaceWeaponSkinSharedHintPath)</WeaponSkinSharedHintPath>
+    <WeaponSkinSharedHintPath Condition="'$(WeaponSkinSharedHintPath)' == '' and Exists('$(ServerWeaponSkinSharedHintPath)')">$(ServerWeaponSkinSharedHintPath)</WeaponSkinSharedHintPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.5" />
+    <PackageReference Include="ModSharp.Sharp.Extensions.CommandManager" Version="2.1.106" ExcludeAssets="runtime" />
+    <PackageReference Include="ModSharp.Sharp.Modules.LocalizerManager.Shared" Version="2.*" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="ModSharp.Sharp.Modules.MenuManager.Shared" Version="2.*" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="ModSharp.Sharp.Shared" Version="2.*" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="MySqlConnector" Version="2.5.0" />
+    <PackageReference Include="Npgsql" Version="10.0.2" />
+    <PackageReference Include="Ptr.Shared" Version="1.*" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="SqlSugarCoreNoDrive" Version="5.1.4.213" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="WeaponSkin.Shared" Condition="Exists('$(WeaponSkinSharedHintPath)')">
+      <HintPath>$(WeaponSkinSharedHintPath)</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="ValidateWeaponSkinSharedReference" BeforeTargets="ResolveReferences" Condition="'$(WeaponSkinSharedHintPath)' == '' or !Exists('$(WeaponSkinSharedHintPath)')">
+    <Error Text="WeaponSkin.Shared.dll could not be resolved. Set WeaponSkinSharedHintPath, build WeaponSkin.Shared in the workspace, or install the original shared assembly on the server." />
+  </Target>
+
+  <Target Name="CleanupLegacyRootOutput" BeforeTargets="Build">
+    <RemoveDir Directories="$(DeploymentRoot)configs;
+                             $(DeploymentRoot)shared;
+                             $(DeploymentRoot)sharp;
+                             $(DeploymentRoot)modules\IngameWeaponPaints;
+                             $(DeploymentRoot)modules\WeaponSkin;
+                             $(DeploymentRoot)modules\WeaponSkin.Request.Sql;
+                             $(DeploymentRoot)locales" />
+  </Target>
+
+  <Target Name="CreateDeploymentLayout" AfterTargets="Build">
+    <PropertyGroup>
+      <DeploymentLocalesRoot>$(DeploymentRoot)locales\</DeploymentLocalesRoot>
+      <DeploymentConfigsRoot>$(DeploymentRoot)configs\</DeploymentConfigsRoot>
+    </PropertyGroup>
+
+    <MakeDir Directories="$(DeploymentLocalesRoot);$(DeploymentConfigsRoot)" />
+
+    <Copy SourceFiles="locale\WeaponSkin.Menu.json"
+          DestinationFiles="$(DeploymentLocalesRoot)WeaponSkin.Menu.json"
+          Condition="Exists('locale\WeaponSkin.Menu.json')"
+          SkipUnchangedFiles="true" />
+
+    <Copy SourceFiles="config\weaponskin.menu.jsonc"
+          DestinationFiles="$(DeploymentConfigsRoot)weaponskin.menu.jsonc"
+          Condition="Exists('config\weaponskin.menu.jsonc')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="TrimWindowsX64Deployment" AfterTargets="Build">
+    <ItemGroup>
+      <UnneededResourceDirectories Include="$(OutputPath)de;
+                                           $(OutputPath)es;
+                                           $(OutputPath)fr;
+                                           $(OutputPath)it;
+                                           $(OutputPath)ja;
+                                           $(OutputPath)ko;
+                                           $(OutputPath)pt-BR;
+                                           $(OutputPath)ru;
+                                           $(OutputPath)zh-Hans;
+                                           $(OutputPath)zh-Hant" />
+      <UnneededRuntimeDirectories Include="$(OutputPath)runtimes\browser-wasm;
+                                          $(OutputPath)runtimes\linux-arm;
+                                          $(OutputPath)runtimes\linux-arm64;
+                                          $(OutputPath)runtimes\linux-armel;
+                                          $(OutputPath)runtimes\linux-mips64;
+                                          $(OutputPath)runtimes\linux-musl-arm;
+                                          $(OutputPath)runtimes\linux-musl-arm64;
+                                          $(OutputPath)runtimes\linux-musl-riscv64;
+                                          $(OutputPath)runtimes\linux-musl-s390x;
+                                          $(OutputPath)runtimes\linux-musl-x64;
+                                          $(OutputPath)runtimes\linux-ppc64le;
+                                          $(OutputPath)runtimes\linux-riscv64;
+                                          $(OutputPath)runtimes\linux-s390x;
+                                          $(OutputPath)runtimes\linux-x64;
+                                          $(OutputPath)runtimes\linux-x86;
+                                          $(OutputPath)runtimes\maccatalyst-arm64;
+                                          $(OutputPath)runtimes\maccatalyst-x64;
+                                          $(OutputPath)runtimes\osx-arm64;
+                                          $(OutputPath)runtimes\osx-x64;
+                                          $(OutputPath)runtimes\unix;
+                                          $(OutputPath)runtimes\win;
+                                          $(OutputPath)runtimes\win-arm;
+                                          $(OutputPath)runtimes\win-arm64;
+                                          $(OutputPath)runtimes\win-x86" />
+      <UnneededFiles Include="$(OutputPath)Azure.Core.dll;
+                              $(OutputPath)Azure.Identity.dll;
+                              $(OutputPath)Microsoft.Data.SqlClient.dll;
+                              $(OutputPath)Microsoft.Identity.Client.dll;
+                              $(OutputPath)Microsoft.Identity.Client.Extensions.Msal.dll;
+                              $(OutputPath)Microsoft.IdentityModel.Abstractions.dll;
+                              $(OutputPath)Microsoft.IdentityModel.JsonWebTokens.dll;
+                              $(OutputPath)Microsoft.IdentityModel.Logging.dll;
+                              $(OutputPath)Microsoft.IdentityModel.Protocols.dll;
+                              $(OutputPath)Microsoft.IdentityModel.Protocols.OpenIdConnect.dll;
+                              $(OutputPath)Microsoft.IdentityModel.Tokens.dll;
+                              $(OutputPath)Microsoft.SqlServer.Server.dll;
+                              $(OutputPath)Ptr.Shared.dll;
+                              $(OutputPath)Sharp.Extensions.CommandManager.dll;
+                              $(OutputPath)Sharp.Modules.LocalizerManager.Shared.dll;
+                              $(OutputPath)Sharp.Modules.MenuManager.Shared.dll;
+                              $(OutputPath)Sharp.Shared.dll;
+                              $(OutputPath)System.ClientModel.dll;
+                              $(OutputPath)System.Diagnostics.EventLog.dll;
+                              $(OutputPath)System.IdentityModel.Tokens.Jwt.dll;
+                              $(OutputPath)System.Memory.Data.dll;
+                              $(OutputPath)System.Runtime.Caching.dll;
+                              $(OutputPath)WeaponSkin.Menu.pdb;
+                              $(OutputPath)runtimes\win-x64\native\Microsoft.Data.SqlClient.SNI.dll" />
+    </ItemGroup>
+
+    <RemoveDir Directories="@(UnneededResourceDirectories);@(UnneededRuntimeDirectories)" />
+    <Delete Files="@(UnneededFiles)" />
+  </Target>
+
+  <ItemGroup>
+    <None Update="Data\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Update="locale\*.json">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </None>
+    <None Update="config\*.jsonc">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,188 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - WeaponSkin.Menu.csproj
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Resolve version change
+        id: version
+        shell: pwsh
+        run: |
+          $csprojPath = Join-Path $env:GITHUB_WORKSPACE 'WeaponSkin.Menu.csproj'
+
+          [xml]$currentProject = Get-Content $csprojPath
+          $currentVersion = @($currentProject.Project.PropertyGroup | Where-Object { $_.Version } | ForEach-Object { $_.Version })[0]
+
+          if ([string]::IsNullOrWhiteSpace($currentVersion)) {
+            throw 'Version was not found in WeaponSkin.Menu.csproj.'
+          }
+
+          $before = '${{ github.event.before }}'
+          $previousVersion = ''
+
+          if ($before -and $before -ne '0000000000000000000000000000000000000000') {
+            $previousContent = git show "$before`:WeaponSkin.Menu.csproj" 2>$null
+            if ($LASTEXITCODE -eq 0 -and $previousContent) {
+              $tempFile = Join-Path $env:RUNNER_TEMP 'previous.WeaponSkin.Menu.csproj'
+              $previousContent | Set-Content -Path $tempFile -Encoding UTF8
+              [xml]$previousProject = Get-Content $tempFile
+              $previousVersion = @($previousProject.Project.PropertyGroup | Where-Object { $_.Version } | ForEach-Object { $_.Version })[0]
+            }
+          }
+
+          $versionChanged = [string]::IsNullOrWhiteSpace($previousVersion) -or ($previousVersion -ne $currentVersion)
+
+          "version=$currentVersion" >> $env:GITHUB_OUTPUT
+          "previous=$previousVersion" >> $env:GITHUB_OUTPUT
+          "changed=$($versionChanged.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+      - name: Check existing release
+        id: release_check
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $headers = @{
+            Authorization = "Bearer $env:GITHUB_TOKEN"
+            Accept = 'application/vnd.github+json'
+            'X-GitHub-Api-Version' = '2022-11-28'
+            'User-Agent' = 'github-actions'
+          }
+
+          $uri = "https://api.github.com/repos/${{ github.repository }}/releases/tags/$version"
+
+          try {
+            Invoke-RestMethod -Uri $uri -Headers $headers | Out-Null
+            "exists=true" >> $env:GITHUB_OUTPUT
+          }
+          catch {
+            "exists=false" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Stop when version did not change
+        if: github.event_name != 'workflow_dispatch' && steps.version.outputs.changed != 'true' && steps.release_check.outputs.exists == 'true'
+        shell: pwsh
+        run: |
+          Write-Host "Version did not change. Skipping release."
+
+      - name: Setup .NET
+        if: github.event_name == 'workflow_dispatch' || steps.version.outputs.changed == 'true' || steps.release_check.outputs.exists != 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Download original WeaponSkin release
+        if: github.event_name == 'workflow_dispatch' || steps.version.outputs.changed == 'true' || steps.release_check.outputs.exists != 'true'
+        id: weaponskin
+        shell: pwsh
+        run: |
+          $headers = @{
+            'User-Agent' = 'github-actions'
+            'Accept' = 'application/vnd.github+json'
+            'X-GitHub-Api-Version' = '2022-11-28'
+          }
+
+          $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/Ariiisu/WeaponSkin/releases/latest' -Headers $headers
+          $asset = $release.assets | Where-Object { $_.name -like '*.zip' } | Select-Object -First 1
+
+          if (-not $asset) {
+            throw 'Could not find a release zip asset from Ariiisu/WeaponSkin.'
+          }
+
+          $zipPath = Join-Path $env:RUNNER_TEMP $asset.name
+          $extractPath = Join-Path $env:RUNNER_TEMP 'weaponskin-release'
+
+          Invoke-WebRequest -Uri $asset.browser_download_url -Headers @{ 'User-Agent' = 'github-actions' } -OutFile $zipPath
+          Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+
+          $sharedDll = Join-Path $extractPath 'shared\WeaponSkin.Shared\WeaponSkin.Shared.dll'
+
+          if (-not (Test-Path $sharedDll)) {
+            throw "WeaponSkin.Shared.dll was not found in the original WeaponSkin release asset."
+          }
+
+          "shared_dll=$sharedDll" >> $env:GITHUB_OUTPUT
+          "source_release=$($release.html_url)" >> $env:GITHUB_OUTPUT
+
+      - name: Build WeaponSkin.Menu
+        if: github.event_name == 'workflow_dispatch' || steps.version.outputs.changed == 'true' || steps.release_check.outputs.exists != 'true'
+        shell: pwsh
+        run: |
+          dotnet build .\WeaponSkin.Menu.csproj `
+            -c Release `
+            /p:WeaponSkinSharedHintPath="${{ steps.weaponskin.outputs.shared_dll }}"
+
+      - name: Create sharp-root package
+        if: github.event_name == 'workflow_dispatch' || steps.version.outputs.changed == 'true' || steps.release_check.outputs.exists != 'true'
+        id: package
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $buildRoot = Join-Path $env:GITHUB_WORKSPACE 'bin\Release\net10.0'
+          $stageRoot = Join-Path $env:RUNNER_TEMP 'package'
+          $sharpRoot = Join-Path $stageRoot 'sharp'
+          $moduleSource = Join-Path $buildRoot 'modules\WeaponSkin.Menu'
+          $localeSource = Join-Path $buildRoot 'locales'
+          $configSource = Join-Path $buildRoot 'configs'
+
+          if (-not (Test-Path $moduleSource)) {
+            throw "Built module folder was not found: $moduleSource"
+          }
+
+          Remove-Item $stageRoot -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path (Join-Path $sharpRoot 'modules') -Force | Out-Null
+
+          Copy-Item -Path $moduleSource -Destination (Join-Path $sharpRoot 'modules\WeaponSkin.Menu') -Recurse -Force
+
+          if (Test-Path $localeSource) {
+            Copy-Item -Path $localeSource -Destination (Join-Path $sharpRoot 'locales') -Recurse -Force
+          }
+
+          if (Test-Path $configSource) {
+            Copy-Item -Path $configSource -Destination (Join-Path $sharpRoot 'configs') -Recurse -Force
+          }
+
+          $zipPath = Join-Path $env:RUNNER_TEMP 'WeaponSkin.Menu.zip'
+
+          if (Test-Path $zipPath) {
+            Remove-Item $zipPath -Force
+          }
+
+          Compress-Archive -Path $sharpRoot -DestinationPath $zipPath -CompressionLevel Optimal
+
+          "zip_path=$zipPath" >> $env:GITHUB_OUTPUT
+          "zip_name=WeaponSkin.Menu.zip" >> $env:GITHUB_OUTPUT
+
+      - name: Create or update release
+        if: github.event_name == 'workflow_dispatch' || steps.version.outputs.changed == 'true' || steps.release_check.outputs.exists != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: WeaponSkin.Menu ${{ steps.version.outputs.version }}
+          files: ${{ steps.package.outputs.zip_path }}
+          generate_release_notes: true
+          body: |
+            Original WeaponSkin dependency:
+            ${{ steps.weaponskin.outputs.source_release }}
+
+            This package contains only `WeaponSkin.Menu` with a `sharp/` root layout.

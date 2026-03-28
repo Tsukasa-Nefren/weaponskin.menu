@@ -1,0 +1,21 @@
+{
+  // Weapon skin application:
+  // - Deferred: only sync WeaponSkin cache, apply on next buy/pickup/spawn
+  // - Live: also try immediate in-round apply
+  "Apply": {
+    "Weapons": "Deferred",
+
+    // Gloves, agents, music kits, pins
+    "TeamCosmetics": "Live"
+  },
+
+  "Sync": {
+    // If direct WeaponSkin refresh invocation fails, fall back to issuing ws_refresh as a client command.
+    "UseClientCommandFallback": true
+  },
+
+  "Selection": {
+    // When a player is not currently on CT/TE, save team items to both teams.
+    "WriteBothTeamsWhenSpectator": true
+  }
+}
