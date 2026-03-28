@@ -138,7 +138,7 @@ jobs:
             Copy-Item -Path $configSource -Destination (Join-Path $sharpRoot 'configs') -Recurse -Force
           }
 
-          $zipPath = Join-Path $env:RUNNER_TEMP ("WeaponSkin.Menu-{0}.zip" -f $version)
+          $zipPath = Join-Path $env:RUNNER_TEMP 'WeaponSkin.Menu.zip'
 
           if (Test-Path $zipPath) {
             Remove-Item $zipPath -Force
@@ -147,7 +147,7 @@ jobs:
           Compress-Archive -Path $sharpRoot -DestinationPath $zipPath -CompressionLevel Optimal
 
           "zip_path=$zipPath" >> $env:GITHUB_OUTPUT
-          "zip_name=WeaponSkin.Menu-$version.zip" >> $env:GITHUB_OUTPUT
+          "zip_name=WeaponSkin.Menu.zip" >> $env:GITHUB_OUTPUT
 
       - name: Create or update release
         if: github.event_name == 'workflow_dispatch' || steps.version.outputs.changed == 'true'
