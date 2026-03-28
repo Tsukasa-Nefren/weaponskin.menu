@@ -2,6 +2,10 @@
 
 `WeaponSkin.Menu` is a companion ModSharp module for the original `WeaponSkin` plugin.
 
+Original `WeaponSkin` repository:
+
+- [Ariiisu/WeaponSkin](https://github.com/Ariiisu/WeaponSkin)
+
 It provides:
 
 - in-game menu flow for `WeaponSkin`
