@@ -234,14 +234,15 @@ internal sealed class CatalogManager(
 
     private IReadOnlyList<WeaponPaintCatalog> LoadWeaponPaints(string language)
     {
-        var data = ReadSkinCatalog(language);
+        var filePath = ResolveLocalizedCatalogFile("skins", language);
+        var data = ReadJson<List<SkinData>>(filePath);
         var knifeItemIds = KnifeDefinitions
             .Select(static option => (int)option.ItemId!.Value)
             .ToHashSet();
 
         if (data.Count == 0)
         {
-            logger.LogWarning("No weapon skin catalog entries were loaded for {language}", language);
+            logger.LogWarning("No weapon skin catalog entries were loaded from {filePath}", filePath);
         }
 
         return BuildWeaponPaintCatalogs(data.Where(item => !knifeItemIds.Contains(item.WeaponDefIndex)));
@@ -249,7 +250,8 @@ internal sealed class CatalogManager(
 
     private IReadOnlyDictionary<EconItemId, IReadOnlyList<PaintOption>> LoadKnifePaints(string language)
     {
-        var data = ReadSkinCatalog(language);
+        var filePath = ResolveLocalizedCatalogFile("skins", language);
+        var data = ReadJson<List<SkinData>>(filePath);
         var knifeItemIds = KnifeDefinitions
             .Select(static option => (int)option.ItemId!.Value)
             .ToHashSet();
@@ -414,49 +416,8 @@ internal sealed class CatalogManager(
     private string GetCatalogLanguage(IGameClient? client)
         => playerLanguages.GetCatalogLanguage(client);
 
-    private IReadOnlyList<SkinData> ReadSkinCatalog(string language)
-    {
-        var localizedPath = ResolveLocalizedDataFile("skins", language);
-        var localized = ReadJson<List<SkinData>>(localizedPath);
-
-        if (language.Equals("en", StringComparison.OrdinalIgnoreCase))
-        {
-            return localized;
-        }
-
-        var englishPath = ResolveLocalizedDataFile("skins", "en");
-        var english = ReadJson<List<SkinData>>(englishPath);
-        if (english.Count == 0)
-        {
-            return localized;
-        }
-
-        if (localized.Count == 0)
-        {
-            return english;
-        }
-
-        var merged = new List<SkinData>(localized);
-        var existing = localized
-            .Select(static item => (item.WeaponDefIndex, item.Paint))
-            .ToHashSet();
-
-        foreach (var entry in english)
-        {
-            if (existing.Add((entry.WeaponDefIndex, entry.Paint)))
-            {
-                merged.Add(entry);
-            }
-        }
-
-        return merged;
-    }
-
     private string ResolveLocalizedCatalogFile(string baseName, string language)
         => ResolveLocalizedFile(baseName, language, Path.Combine(bridge.ModuleDirectory, "Data"), Path.Combine(bridge.ModuleDirectory, "GeneratedData"));
-
-    private string ResolveLocalizedDataFile(string baseName, string language)
-        => ResolveLocalizedFile(baseName, language, Path.Combine(bridge.ModuleDirectory, "Data"));
 
     private string ResolveLocalizedGeneratedFile(string baseName, string language)
         => ResolveLocalizedFile(baseName, language, Path.Combine(bridge.ModuleDirectory, "GeneratedData"));
