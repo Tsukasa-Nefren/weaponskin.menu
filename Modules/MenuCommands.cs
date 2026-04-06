@@ -8,7 +8,6 @@ using Sharp.Shared.Objects;
 using Sharp.Shared.Types;
 using Sharp.Shared.Units;
 using WeaponSkin.Menu.Managers;
-using WeaponSkin.Menu.Persistence;
 using WeaponSkin.Shared;
 
 namespace WeaponSkin.Menu.Modules;
@@ -29,19 +28,27 @@ internal sealed class MenuCommands(
     private const float DefaultWear = 0.01f;
     private const float DefaultSeed = 0f;
 
+    private static readonly IReadOnlyList<WearPreset> WearPresets =
+    [
+        new("ws.menu.wear.factory_new", 0.01f, 0.07f),
+        new("ws.menu.wear.minimal_wear", 0.10f, 0.15f),
+        new("ws.menu.wear.field_tested", 0.25f, 0.38f),
+        new("ws.menu.wear.well_worn", 0.42f, 0.45f),
+        new("ws.menu.wear.battle_scarred", 0.75f, float.PositiveInfinity),
+    ];
+
     private IMenuManager? _menuManager;
 
     public bool Init()
     {
         RegisterMenuCommand("ws", OpenMainMenu);
-        RegisterMenuCommand("ws_menu", OpenMainMenu);
-        RegisterMenuCommand("ws_knife", client => OpenSubMenu(client, BuildKnifeMenu));
-        RegisterMenuCommand("ws_gloves", client => OpenSubMenu(client, BuildGloveMenu));
-        RegisterMenuCommand("ws_agents", client => OpenSubMenu(client, BuildAgentMenu));
-        RegisterMenuCommand("ws_music", client => OpenSubMenu(client, BuildMusicMenu));
-        RegisterMenuCommand("ws_pins", client => OpenSubMenu(client, BuildPinMenu));
-        RegisterMenuCommand("ws_stattrak", ToggleStatTrak);
-        RegisterMenuCommand("ws_st", ToggleStatTrak);
+        RegisterMenuCommand("knife", client => OpenSubMenu(client, BuildKnifeMenu));
+        RegisterMenuCommand("gloves", client => OpenSubMenu(client, BuildGloveMenu));
+        RegisterMenuCommand("agents", client => OpenSubMenu(client, BuildAgentMenu));
+        RegisterMenuCommand("music", client => OpenSubMenu(client, BuildMusicMenu));
+        RegisterMenuCommand("pins", client => OpenSubMenu(client, BuildPinMenu));
+        RegisterMenuCommand("stattrak", ToggleStatTrak);
+        RegisterMenuCommand("st", ToggleStatTrak);
         return true;
     }
 
@@ -155,35 +162,11 @@ internal sealed class MenuCommands(
 
         foreach (var paint in group.Paints)
         {
-            builder.Item((IGameClient client, ref MenuItemContext context) =>
+            builder.SubMenu((IGameClient client) =>
             {
                 var selected = playerInfo.GetPlayerWeaponSkin(client, group.ItemId)?.PaintId == paint.PaintId;
-                context.Title = selected ? $"* {paint.Name}" : paint.Name;
-                context.Action = controller =>
-                {
-                    var current = playerInfo.GetPlayerWeaponSkin(controller.Client, group.ItemId);
-                    var updated = new WeaponCosmetics
-                    {
-                        ItemId = group.ItemId,
-                        PaintId = paint.PaintId,
-                        Wear = current?.Wear ?? DefaultWear,
-                        Seed = current?.Seed ?? DefaultSeed,
-                        StatTrak = current?.StatTrak,
-                        NameTag = current?.NameTag ?? string.Empty,
-                        Stickers = current?.Stickers is { } stickers ? [.. stickers] : new Sticker?[5],
-                        Keychain = current?.Keychain,
-                    };
-
-                    playerInfo.SetPlayerWeaponSkin(controller.Client, updated);
-                    Persist(controller.Client,
-                            repository => repository.SaveWeaponCosmetic(controller.Client.SteamId, updated),
-                            "save weapon cosmetic",
-                            LiveApplyTarget.Weapons,
-                            current => NotifySaveState(current, LiveApplyTarget.Weapons),
-                            weaponItemId: group.ItemId);
-                    controller.Refresh();
-                };
-            });
+                return selected ? $"* {paint.Name}" : paint.Name;
+            }, client => BuildWeaponWearMenu(client, group, paint));
         }
 
         return builder
@@ -291,42 +274,14 @@ internal sealed class MenuCommands(
 
         foreach (var paint in catalog.GetKnifePaints(client, knifeItemId))
         {
-            builder.Item((IGameClient client, ref MenuItemContext context) =>
+            builder.SubMenu((IGameClient current) =>
             {
-                var displayTeam = ResolveDisplayTeam(client);
-                var selected = playerInfo.GetPlayerKnife(client, displayTeam) == knifeItemId
-                               && playerInfo.GetPlayerWeaponSkin(client, knifeItemId)?.PaintId == paint.PaintId;
+                var displayTeam = ResolveDisplayTeam(current);
+                var selected = playerInfo.GetPlayerKnife(current, displayTeam) == knifeItemId
+                               && playerInfo.GetPlayerWeaponSkin(current, knifeItemId)?.PaintId == paint.PaintId;
 
-                context.Title = selected ? $"* {paint.Name}" : paint.Name;
-                context.Action = controller =>
-                {
-                    var targetTeams = ResolveTargetTeams(controller.Client);
-                    var updated = CreateOrUpdateCosmetic(controller.Client, knifeItemId, paint.PaintId);
-
-                    foreach (var team in targetTeams)
-                    {
-                        playerInfo.SetPlayerKnife(controller.Client, team, knifeItemId);
-                    }
-
-                    playerInfo.SetPlayerWeaponSkin(controller.Client, updated);
-
-                    Persist(controller.Client,
-                        async repository =>
-                        {
-                            foreach (var team in targetTeams)
-                            {
-                                await repository.SaveKnife(controller.Client.SteamId, team, knifeItemId).ConfigureAwait(false);
-                            }
-
-                            await repository.SaveWeaponCosmetic(controller.Client.SteamId, updated).ConfigureAwait(false);
-                        },
-                        "save knife skin",
-                        LiveApplyTarget.Weapons,
-                        current => NotifySaveState(current, LiveApplyTarget.Weapons),
-                        refreshKnife: true);
-                    controller.Refresh();
-                };
-            });
+                return selected ? $"* {paint.Name}" : paint.Name;
+            }, current => BuildKnifeWearMenu(current, option.Name, knifeItemId, paint));
         }
 
         return builder
@@ -342,57 +297,99 @@ internal sealed class MenuCommands(
 
         foreach (var option in catalog.GetGloves(client))
         {
-            builder.Item((IGameClient current, ref MenuItemContext context) =>
+            if ((int)option.ItemId == 0)
             {
-                var currentItem = playerInfo.GetPlayerGloves(current, displayTeam);
-                var currentCosmetic = playerInfo.GetPlayerWeaponSkin(current, option.ItemId);
-                var selected = (int)option.ItemId == 0
-                    ? currentItem is null
-                    : currentItem is not null
-                      && (int)currentItem.Value == (int)option.ItemId
-                      && currentCosmetic?.PaintId == option.PaintId;
-
-                context.Title = selected ? $"* {option.Name}" : option.Name;
-                context.Action = controller =>
+                builder.Item((IGameClient current, ref MenuItemContext context) =>
                 {
-                    var targetTeams = ResolveTargetTeams(controller.Client);
-                    WeaponCosmetics? cosmetics = null;
+                    var selected = playerInfo.GetPlayerGloves(current, displayTeam) is null;
 
-                    foreach (var team in targetTeams)
+                    context.Title = selected ? $"* {option.Name}" : option.Name;
+                    context.Action = controller =>
                     {
-                        if ((int)option.ItemId == 0)
+                        var targetTeams = ResolveTargetTeams(controller.Client);
+
+                        foreach (var team in targetTeams)
                         {
                             playerInfo.SetPlayerGloves(controller.Client, team, null);
-                            continue;
                         }
 
-                        cosmetics ??= CreateOrUpdateCosmetic(controller.Client, option.ItemId, option.PaintId);
-                        playerInfo.SetPlayerGloves(controller.Client, team, (EconGlovesId)option.ItemId);
-                        playerInfo.SetPlayerWeaponSkin(controller.Client, cosmetics);
-                    }
-
-                    Persist(controller.Client,
+                        Persist(controller.Client,
                             async repository =>
                             {
                                 foreach (var team in targetTeams)
                                 {
-                                    if ((int)option.ItemId == 0)
-                                    {
-                                        await repository.ClearGloves(controller.Client.SteamId, team).ConfigureAwait(false);
-                                        continue;
-                                    }
-
-                                    await repository.SaveGloves(controller.Client.SteamId, team, option.ItemId).ConfigureAwait(false);
-                                }
-
-                                if (cosmetics is not null)
-                                {
-                                    await repository.SaveWeaponCosmetic(controller.Client.SteamId, cosmetics).ConfigureAwait(false);
+                                    await repository.ClearGloves(controller.Client.SteamId, team).ConfigureAwait(false);
                                 }
                             },
-                            (int)option.ItemId == 0 ? "clear gloves" : "save gloves",
+                            "clear gloves",
                             LiveApplyTarget.Gloves,
                             current => NotifySaveState(current, LiveApplyTarget.Gloves));
+                        controller.Refresh();
+                    };
+                });
+
+                continue;
+            }
+
+            builder.SubMenu((IGameClient current) =>
+            {
+                var currentItem = playerInfo.GetPlayerGloves(current, displayTeam);
+                var currentCosmetic = playerInfo.GetPlayerWeaponSkin(current, option.ItemId);
+                var selected = currentItem is not null
+                               && (int)currentItem.Value == (int)option.ItemId
+                               && currentCosmetic?.PaintId == option.PaintId;
+
+                return selected ? $"* {option.Name}" : option.Name;
+            }, current => BuildGloveWearMenu(current, option));
+        }
+
+        return builder
+            .BackItem(current => text.Get(current, "ws.menu.back"))
+            .Build();
+    }
+
+    private MenuModel BuildGloveWearMenu(IGameClient client, GloveOption option)
+    {
+        var builder = MenuModel.Create()
+            .Title(_ => option.Name);
+
+        foreach (var preset in WearPresets)
+        {
+            builder.Item((IGameClient current, ref MenuItemContext context) =>
+            {
+                var displayTeam = ResolveDisplayTeam(current);
+                var selected = playerInfo.GetPlayerGloves(current, displayTeam) == (EconGlovesId)option.ItemId
+                               && playerInfo.GetPlayerWeaponSkin(current, option.ItemId) is { PaintId: var currentPaintId } cosmetics
+                               && currentPaintId == option.PaintId
+                               && ResolveWearPreset(cosmetics.Wear).LabelKey == preset.LabelKey;
+
+                var label = text.Get(current, preset.LabelKey);
+                context.Title = selected ? $"* {label}" : label;
+                context.Action = controller =>
+                {
+                    var targetTeams = ResolveTargetTeams(controller.Client);
+                    var updated = CreateOrUpdateCosmetic(controller.Client, option.ItemId, option.PaintId, preset.Wear);
+
+                    foreach (var team in targetTeams)
+                    {
+                        playerInfo.SetPlayerGloves(controller.Client, team, (EconGlovesId)option.ItemId);
+                    }
+
+                    playerInfo.SetPlayerWeaponSkin(controller.Client, updated);
+
+                    Persist(controller.Client,
+                        async repository =>
+                        {
+                            foreach (var team in targetTeams)
+                            {
+                                await repository.SaveGloves(controller.Client.SteamId, team, option.ItemId).ConfigureAwait(false);
+                            }
+
+                            await repository.SaveWeaponCosmetic(controller.Client.SteamId, updated).ConfigureAwait(false);
+                        },
+                        "save glove skin",
+                        LiveApplyTarget.Gloves,
+                        current => NotifySaveState(current, LiveApplyTarget.Gloves));
                     controller.Refresh();
                 };
             });
@@ -604,21 +601,126 @@ internal sealed class MenuCommands(
                 weaponItemId: itemId);
     }
 
-    private WeaponCosmetics CreateOrUpdateCosmetic(IGameClient client, EconItemId itemId, ushort paintId)
+    private MenuModel BuildWeaponWearMenu(IGameClient client, WeaponPaintCatalog group, PaintOption paint)
+    {
+        var builder = MenuModel.Create()
+            .Title(_ => paint.Name);
+
+        foreach (var preset in WearPresets)
+        {
+            builder.Item((IGameClient current, ref MenuItemContext context) =>
+            {
+                var selected = playerInfo.GetPlayerWeaponSkin(current, group.ItemId) is { PaintId: var currentPaintId } cosmetics
+                               && currentPaintId == paint.PaintId
+                               && ResolveWearPreset(cosmetics.Wear).LabelKey == preset.LabelKey;
+
+                var label = text.Get(current, preset.LabelKey);
+                context.Title = selected ? $"* {label}" : label;
+                context.Action = controller =>
+                {
+                    var updated = CreateOrUpdateCosmetic(controller.Client, group.ItemId, paint.PaintId, preset.Wear);
+                    playerInfo.SetPlayerWeaponSkin(controller.Client, updated);
+                    Persist(controller.Client,
+                            repository => repository.SaveWeaponCosmetic(controller.Client.SteamId, updated),
+                            "save weapon cosmetic",
+                            LiveApplyTarget.Weapons,
+                            current => NotifySaveState(current, LiveApplyTarget.Weapons),
+                            weaponItemId: group.ItemId);
+                    controller.Refresh();
+                };
+            });
+        }
+
+        return builder
+            .BackItem(current => text.Get(current, "ws.menu.back"))
+            .Build();
+    }
+
+    private MenuModel BuildKnifeWearMenu(IGameClient client, string knifeName, EconItemId knifeItemId, PaintOption paint)
+    {
+        var builder = MenuModel.Create()
+            .Title(_ => $"{knifeName} | {paint.Name.Split('|').Last().Trim()}");
+
+        foreach (var preset in WearPresets)
+        {
+            builder.Item((IGameClient current, ref MenuItemContext context) =>
+            {
+                var displayTeam = ResolveDisplayTeam(current);
+                var selected = playerInfo.GetPlayerKnife(current, displayTeam) == knifeItemId
+                               && playerInfo.GetPlayerWeaponSkin(current, knifeItemId) is { PaintId: var currentPaintId } cosmetics
+                               && currentPaintId == paint.PaintId
+                               && ResolveWearPreset(cosmetics.Wear).LabelKey == preset.LabelKey;
+
+                var label = text.Get(current, preset.LabelKey);
+                context.Title = selected ? $"* {label}" : label;
+                context.Action = controller =>
+                {
+                    var targetTeams = ResolveTargetTeams(controller.Client);
+                    var updated = CreateOrUpdateCosmetic(controller.Client, knifeItemId, paint.PaintId, preset.Wear);
+
+                    foreach (var team in targetTeams)
+                    {
+                        playerInfo.SetPlayerKnife(controller.Client, team, knifeItemId);
+                    }
+
+                    playerInfo.SetPlayerWeaponSkin(controller.Client, updated);
+
+                    Persist(controller.Client,
+                        async repository =>
+                        {
+                            foreach (var team in targetTeams)
+                            {
+                                await repository.SaveKnife(controller.Client.SteamId, team, knifeItemId).ConfigureAwait(false);
+                            }
+
+                            await repository.SaveWeaponCosmetic(controller.Client.SteamId, updated).ConfigureAwait(false);
+                        },
+                        "save knife skin",
+                        LiveApplyTarget.Weapons,
+                        current => NotifySaveState(current, LiveApplyTarget.Weapons),
+                        refreshKnife: true);
+                    controller.Refresh();
+                };
+            });
+        }
+
+        return builder
+            .BackItem(current => text.Get(current, "ws.menu.back"))
+            .Build();
+    }
+
+    private WeaponCosmetics CreateOrUpdateCosmetic(IGameClient client, EconItemId itemId, ushort paintId, float? wear = null)
     {
         var current = playerInfo.GetPlayerWeaponSkin(client, itemId);
+        return CreateOrUpdateCosmetic(current, itemId, paintId, wear ?? current?.Wear ?? DefaultWear);
+    }
 
+    private static WeaponCosmetics CreateOrUpdateCosmetic(WeaponCosmetics? current, EconItemId itemId, ushort paintId, float wear)
+    {
         return new WeaponCosmetics
         {
             ItemId = itemId,
             PaintId = paintId,
-            Wear = current?.Wear ?? DefaultWear,
+            Wear = wear,
             Seed = current?.Seed ?? DefaultSeed,
             StatTrak = current?.StatTrak,
             NameTag = current?.NameTag ?? string.Empty,
             Stickers = current?.Stickers is { } stickers ? [.. stickers] : new Sticker?[5],
             Keychain = current?.Keychain,
         };
+    }
+
+    private static WearPreset ResolveWearPreset(float wear)
+    {
+        foreach (var preset in WearPresets)
+        {
+            if (wear < preset.MaxWearExclusive)
+            {
+                return preset;
+            }
+        }
+
+        return WearPresets[^1];
     }
 
     private void Persist(
@@ -755,4 +857,6 @@ internal sealed class MenuCommands(
 
     private static bool IsValidPlayer(IGameClient client)
         => client is { IsFakeClient: false, IsConnected: true, IsInGame: true };
+
+    private sealed record WearPreset(string LabelKey, float Wear, float MaxWearExclusive);
 }

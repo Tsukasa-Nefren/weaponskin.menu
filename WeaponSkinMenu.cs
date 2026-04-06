@@ -54,102 +54,111 @@ public sealed class WeaponSkinMenu : IModSharpModule
 
     public bool Init()
     {
-        if (!RunLifecycle(_serviceProvider.GetServices<IManager>(), static service => service.Init(), "Init"))
+        var managers = _serviceProvider.GetServices<IManager>().ToArray();
+        var modules = _serviceProvider.GetServices<IModule>().ToArray();
+
+        if (!LifecycleRunner.Run(managers, static service => service.Init(), _logger, "Init"))
         {
             return false;
         }
 
-        if (!RunLifecycle(_serviceProvider.GetServices<IModule>(), static service => service.Init(), "Init"))
+        if (!LifecycleRunner.Run(modules, static service => service.Init(), _logger, "Init"))
         {
             return false;
         }
 
         _serviceProvider.LoadAllSharpExtensions();
+        _logger.LogInformation(
+            "WeaponSkin.Menu initialized {managerCount} managers and {moduleCount} modules",
+            managers.Length,
+            modules.Length);
         return true;
     }
 
     public void PostInit()
     {
-        InvokeLifecycle(_serviceProvider.GetServices<IManager>(), static service => service.OnPostInit(), "PostInit");
-        InvokeLifecycle(_serviceProvider.GetServices<IModule>(), static service => service.OnPostInit(), "PostInit");
+        LifecycleRunner.Invoke(_serviceProvider.GetServices<IManager>(), static service => service.OnPostInit(), _logger, "PostInit");
+        LifecycleRunner.Invoke(_serviceProvider.GetServices<IModule>(), static service => service.OnPostInit(), _logger, "PostInit");
     }
 
     public void OnAllModulesLoaded()
     {
-        InvokeLifecycle(_serviceProvider.GetServices<IManager>(), static service => service.OnAllModulesLoaded(), "OnAllModulesLoaded");
-        InvokeLifecycle(_serviceProvider.GetServices<IModule>(), static service => service.OnAllModulesLoaded(), "OnAllModulesLoaded");
-        _logger.LogInformation("WeaponSkin.Menu fully initialized and all modules are loaded");
+        LifecycleRunner.Invoke(_serviceProvider.GetServices<IManager>(), static service => service.OnAllModulesLoaded(), _logger, "OnAllModulesLoaded");
+        LifecycleRunner.Invoke(_serviceProvider.GetServices<IModule>(), static service => service.OnAllModulesLoaded(), _logger, "OnAllModulesLoaded");
+        _logger.LogDebug("WeaponSkin.Menu fully initialized and all modules are loaded");
     }
 
     public void OnLibraryConnected(string name)
     {
-        InvokeLifecycle(_serviceProvider.GetServices<IManager>(), service => service.OnLibraryConnected(name), "OnLibraryConnected");
-        InvokeLifecycle(_serviceProvider.GetServices<IModule>(), service => service.OnLibraryConnected(name), "OnLibraryConnected");
+        LifecycleRunner.Invoke(_serviceProvider.GetServices<IManager>(), service => service.OnLibraryConnected(name), _logger, "OnLibraryConnected");
+        LifecycleRunner.Invoke(_serviceProvider.GetServices<IModule>(), service => service.OnLibraryConnected(name), _logger, "OnLibraryConnected");
     }
 
     public void OnLibraryDisconnect(string name)
     {
-        InvokeLifecycle(_serviceProvider.GetServices<IManager>(), service => service.OnLibraryDisconnect(name), "OnLibraryDisconnect");
-        InvokeLifecycle(_serviceProvider.GetServices<IModule>(), service => service.OnLibraryDisconnect(name), "OnLibraryDisconnect");
+        LifecycleRunner.Invoke(_serviceProvider.GetServices<IManager>(), service => service.OnLibraryDisconnect(name), _logger, "OnLibraryDisconnect");
+        LifecycleRunner.Invoke(_serviceProvider.GetServices<IModule>(), service => service.OnLibraryDisconnect(name), _logger, "OnLibraryDisconnect");
     }
 
     public void Shutdown()
     {
-        InvokeLifecycle(_serviceProvider.GetServices<IManager>(), static service => service.Shutdown(), "Shutdown");
-        InvokeLifecycle(_serviceProvider.GetServices<IModule>(), static service => service.Shutdown(), "Shutdown");
+        LifecycleRunner.Invoke(_serviceProvider.GetServices<IManager>(), static service => service.Shutdown(), _logger, "Shutdown");
+        LifecycleRunner.Invoke(_serviceProvider.GetServices<IModule>(), static service => service.Shutdown(), _logger, "Shutdown");
         _serviceProvider.ShutdownAllSharpExtensions();
     }
 
     private void ConfigureServices(IServiceCollection services)
     {
-        services.AddManagerDi();
-        services.AddModuleDi();
+        ServiceRegistration.AddServices(services);
     }
 
-    private bool RunLifecycle<TService>(
-        IEnumerable<TService> services,
-        Func<TService, bool> action,
-        string phase)
+    private static class LifecycleRunner
     {
-        foreach (var service in services)
+        public static bool Run<TService>(
+            IEnumerable<TService> services,
+            Func<TService, bool> action,
+            ILogger logger,
+            string phase)
         {
-            try
+            foreach (var service in services)
             {
-                if (action(service))
+                try
                 {
-                    _logger.LogInformation("{phase} succeeded for {service}", phase, service!.GetType().FullName);
-                    continue;
+                    if (action(service))
+                    {
+                        continue;
+                    }
+
+                    logger.LogError("{phase} failed for {service}", phase, service!.GetType().FullName);
+                    return false;
                 }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "{phase} crashed for {service}", phase, service!.GetType().FullName);
+                    return false;
+                }
+            }
 
-                _logger.LogError("{phase} failed for {service}", phase, service!.GetType().FullName);
-                return false;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "{phase} crashed for {service}", phase, service!.GetType().FullName);
-                return false;
-            }
+            return true;
         }
 
-        return true;
-    }
-
-    private void InvokeLifecycle<TService>(
-        IEnumerable<TService> services,
-        Action<TService> action,
-        string phase)
-    {
-        foreach (var service in services)
+        public static void Invoke<TService>(
+            IEnumerable<TService> services,
+            Action<TService> action,
+            ILogger logger,
+            string phase)
         {
-            try
+            foreach (var service in services)
             {
-                action(service);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "{phase} crashed for {service}", phase, service!.GetType().FullName);
+                try
+                {
+                    action(service);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "{phase} crashed for {service}", phase, service!.GetType().FullName);
+                }
             }
         }
     }
-
 }

@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Threading;
 using Microsoft.Extensions.Logging;
 using Sharp.Shared.Definition;
 using Sharp.Shared.Enums;
@@ -6,7 +7,6 @@ using Sharp.Shared.Listeners;
 using Sharp.Shared.Objects;
 using Sharp.Shared.Types;
 using Sharp.Shared.Units;
-using WeaponSkin.Menu.Persistence;
 using WeaponSkin.Shared;
 
 namespace WeaponSkin.Menu.Managers;
@@ -49,6 +49,7 @@ internal interface IPlayerInfoManager
 internal sealed class PlayerInfoManager(
     InterfaceBridge bridge,
     IWeaponSkinStorage storage,
+    IOriginalWeaponSkinRefreshManager originalRefresh,
     ITextManager text,
     ILogger<PlayerInfoManager> logger) : IPlayerInfoManager, IClientListener, IManager
 {
@@ -62,6 +63,7 @@ internal sealed class PlayerInfoManager(
     private readonly ushort?[,] _playerMedals = new ushort?[PlayerSlot.MaxPlayerCount, TeamMaxCount];
     private readonly ushort?[,] _playerMusicKits = new ushort?[PlayerSlot.MaxPlayerCount, TeamMaxCount];
     private readonly WeaponCosmetics[][] _weaponCosmetics = Enumerable.Repeat<WeaponCosmetics[]>([], PlayerSlot.MaxPlayerCount).ToArray();
+    private readonly long[] _playerStateVersions = new long[PlayerSlot.MaxPlayerCount];
 
     public int ListenerVersion => IClientListener.ApiVersion;
 
@@ -76,6 +78,20 @@ internal sealed class PlayerInfoManager(
     public void Shutdown()
     {
         bridge.ClientManager.RemoveClientListener(this);
+    }
+
+    public void OnAllModulesLoaded()
+    {
+        bridge.ModSharp.InvokeFrameAction(() =>
+        {
+            foreach (var client in bridge.ClientManager.GetGameClients(inGame: true))
+            {
+                if (ShouldTrack(client))
+                {
+                    _ = RefreshInventoryAsync(client, false);
+                }
+            }
+        });
     }
 
     public void OnClientPutInServer(IGameClient client)
@@ -123,19 +139,34 @@ internal sealed class PlayerInfoManager(
         => GetPlayerTeamItem(_playerGloves, client, team);
 
     public void SetPlayerKnife(IGameClient client, CStrikeTeam team, EconItemId? itemId)
-        => SetPlayerTeamItem(_playerKnives, client.Slot, team, itemId);
+    {
+        SetPlayerTeamItem(_playerKnives, client.Slot, team, itemId);
+        BumpPlayerStateVersion(client.Slot);
+    }
 
     public void SetPlayerGloves(IGameClient client, CStrikeTeam team, EconGlovesId? itemId)
-        => SetPlayerTeamItem(_playerGloves, client.Slot, team, itemId);
+    {
+        SetPlayerTeamItem(_playerGloves, client.Slot, team, itemId);
+        BumpPlayerStateVersion(client.Slot);
+    }
 
     public void SetPlayerAgent(IGameClient client, CStrikeTeam team, ushort? itemId)
-        => SetPlayerTeamItem(_playerAgents, client.Slot, team, itemId);
+    {
+        SetPlayerTeamItem(_playerAgents, client.Slot, team, itemId);
+        BumpPlayerStateVersion(client.Slot);
+    }
 
     public void SetPlayerMedal(IGameClient client, CStrikeTeam team, ushort? itemId)
-        => SetPlayerTeamItem(_playerMedals, client.Slot, team, itemId);
+    {
+        SetPlayerTeamItem(_playerMedals, client.Slot, team, itemId);
+        BumpPlayerStateVersion(client.Slot);
+    }
 
     public void SetPlayerMusicKit(IGameClient client, CStrikeTeam team, ushort? itemId)
-        => SetPlayerTeamItem(_playerMusicKits, client.Slot, team, itemId);
+    {
+        SetPlayerTeamItem(_playerMusicKits, client.Slot, team, itemId);
+        BumpPlayerStateVersion(client.Slot);
+    }
 
     public void SetPlayerWeaponSkin(IGameClient client, WeaponCosmetics cosmetics)
     {
@@ -146,10 +177,12 @@ internal sealed class PlayerInfoManager(
         if (index >= 0)
         {
             current[index] = cosmetics;
+            BumpPlayerStateVersion(slot);
             return;
         }
 
         _weaponCosmetics[slot] = [.. current, cosmetics];
+        BumpPlayerStateVersion(slot);
     }
 
     public void ClearPlayerWeaponSkin(IGameClient client, EconItemId itemId)
@@ -157,6 +190,7 @@ internal sealed class PlayerInfoManager(
         _weaponCosmetics[client.Slot] = _weaponCosmetics[client.Slot]
             .Where(item => item.ItemId != itemId)
             .ToArray();
+        BumpPlayerStateVersion(client.Slot);
     }
 
     public WeaponCosmetics? ToggleStatTrak(IGameClient client, EconItemId itemId)
@@ -169,6 +203,7 @@ internal sealed class PlayerInfoManager(
         }
 
         cosmetics.StatTrak = cosmetics.StatTrak is null ? 0 : null;
+        BumpPlayerStateVersion(client.Slot);
         return cosmetics;
     }
 
@@ -189,7 +224,7 @@ internal sealed class PlayerInfoManager(
             text.Notify(client, "ws.chat.refresh_started");
         }
 
-        return LoadInventoryAsync(client.SteamId, notify);
+        return LoadInventoryAsync(client.SteamId, GetPlayerStateVersion(client.Slot), notify);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -249,6 +284,7 @@ internal sealed class PlayerInfoManager(
     private void ClearPlayerData(PlayerSlot slot)
     {
         _weaponCosmetics[slot] = [];
+        _playerStateVersions[(int)slot] = 0;
 
         for (var index = 0; index < TeamMaxCount; index++)
         {
@@ -260,7 +296,7 @@ internal sealed class PlayerInfoManager(
         }
     }
 
-    private async Task LoadInventoryAsync(SteamID steamId, bool notify)
+    private async Task LoadInventoryAsync(SteamID steamId, long initialStateVersion, bool notify)
     {
         try
         {
@@ -280,6 +316,12 @@ internal sealed class PlayerInfoManager(
                     return;
                 }
 
+                if (GetPlayerStateVersion(target.Slot) != initialStateVersion)
+                {
+                    logger.LogDebug("Skipped stale WeaponSkin.Menu inventory refresh for {steamId}", steamId);
+                    return;
+                }
+
                 ClearPlayerData(target.Slot);
                 _weaponCosmetics[target.Slot] = cosmeticsTask.Result;
                 AssignItems(knivesTask.Result, _playerKnives, target.Slot);
@@ -293,6 +335,8 @@ internal sealed class PlayerInfoManager(
                     text.Notify(target, "ws.chat.refresh_done");
                 }
             }).ConfigureAwait(false);
+
+            await originalRefresh.RefreshInventoryAsync(steamId).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -302,4 +346,12 @@ internal sealed class PlayerInfoManager(
 
     private static bool ShouldTrack(IGameClient client)
         => client is { IsFakeClient: false, IsConnected: true, IsInGame: true };
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private long GetPlayerStateVersion(PlayerSlot slot)
+        => Volatile.Read(ref _playerStateVersions[(int)slot]);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void BumpPlayerStateVersion(PlayerSlot slot)
+        => Interlocked.Increment(ref _playerStateVersions[(int)slot]);
 }

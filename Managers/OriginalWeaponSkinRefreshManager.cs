@@ -19,9 +19,11 @@ internal sealed class OriginalWeaponSkinRefreshManager(
     private const string PlayerInfoInterfaceName = "WeaponSkin.Managers.IPlayerInfoManager";
     private const string PlayerInfoConcreteName = "WeaponSkin.Managers.PlayerInfoManager";
     private const string RefreshInventoryMethodName = "RefreshInventory";
+    private const string GetPlayerInventoryMethodName = "GetPlayerInventory";
 
     private object? _cachedPlayerInfo;
     private MethodInfo? _cachedRefreshMethod;
+    private RefreshInvocationKind _cachedRefreshInvocationKind;
 
     public bool Init() => true;
 
@@ -44,22 +46,25 @@ internal sealed class OriginalWeaponSkinRefreshManager(
     public void Shutdown()
         => ClearCache();
 
-    public Task<bool> RefreshInventoryAsync(SteamID steamId)
-        => bridge.ModSharp.InvokeFrameActionAsync(() =>
+    public async Task<bool> RefreshInventoryAsync(SteamID steamId)
+    {
+        Task? refreshTask = null;
+
+        var invoked = await bridge.ModSharp.InvokeFrameActionAsync(() =>
         {
             if (bridge.ClientManager.GetGameClient(steamId) is not { IsFakeClient: false, IsConnected: true, IsInGame: true } client)
             {
                 return false;
             }
 
-            if (!TryResolveRefreshInvoker(out var playerInfo, out var refreshMethod))
+            if (!TryResolveRefreshInvoker(out var playerInfo, out var refreshMethod, out var refreshInvocationKind))
             {
                 return false;
             }
 
             try
             {
-                refreshMethod.Invoke(playerInfo, [client]);
+                refreshTask = refreshMethod.Invoke(playerInfo, BuildRefreshArguments(refreshInvocationKind, client)) as Task;
                 return true;
             }
             catch (TargetInvocationException ex)
@@ -74,14 +79,32 @@ internal sealed class OriginalWeaponSkinRefreshManager(
                 logger.LogError(ex, "Failed to invoke WeaponSkin refresh for {steamId}", steamId);
                 return false;
             }
-        });
+        }).ConfigureAwait(false);
 
-    private bool TryResolveRefreshInvoker(out object playerInfo, out MethodInfo refreshMethod)
+        if (!invoked || refreshTask is null)
+        {
+            return invoked;
+        }
+
+        try
+        {
+            await refreshTask.ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex.GetBaseException(), "Failed to await WeaponSkin refresh for {steamId}", steamId);
+            return false;
+        }
+    }
+
+    private bool TryResolveRefreshInvoker(out object playerInfo, out MethodInfo refreshMethod, out RefreshInvocationKind refreshInvocationKind)
     {
         if (_cachedPlayerInfo is not null && _cachedRefreshMethod is not null)
         {
             playerInfo = _cachedPlayerInfo;
             refreshMethod = _cachedRefreshMethod;
+            refreshInvocationKind = _cachedRefreshInvocationKind;
             return true;
         }
 
@@ -93,6 +116,7 @@ internal sealed class OriginalWeaponSkinRefreshManager(
             logger.LogWarning("Failed to inspect SharpModuleManager modules while resolving WeaponSkin refresh.");
             playerInfo = null!;
             refreshMethod = null!;
+            refreshInvocationKind = default;
             return false;
         }
 
@@ -117,10 +141,11 @@ internal sealed class OriginalWeaponSkinRefreshManager(
                 break;
             }
 
-            if (TryResolvePlayerInfo(moduleInstance, out playerInfo, out refreshMethod))
+            if (TryResolvePlayerInfo(moduleInstance, out playerInfo, out refreshMethod, out refreshInvocationKind))
             {
                 _cachedPlayerInfo = playerInfo;
                 _cachedRefreshMethod = refreshMethod;
+                _cachedRefreshInvocationKind = refreshInvocationKind;
                 return true;
             }
 
@@ -130,10 +155,15 @@ internal sealed class OriginalWeaponSkinRefreshManager(
         logger.LogWarning("WeaponSkin refresh method could not be resolved from the loaded WeaponSkin module.");
         playerInfo = null!;
         refreshMethod = null!;
+        refreshInvocationKind = default;
         return false;
     }
 
-    private static bool TryResolvePlayerInfo(object moduleInstance, out object playerInfo, out MethodInfo refreshMethod)
+    private static bool TryResolvePlayerInfo(
+        object moduleInstance,
+        out object playerInfo,
+        out MethodInfo refreshMethod,
+        out RefreshInvocationKind refreshInvocationKind)
     {
         var moduleType = moduleInstance.GetType();
         var serviceProviderField = moduleType.GetField(ServiceProviderFieldName, BindingFlags.Instance | BindingFlags.NonPublic);
@@ -143,6 +173,7 @@ internal sealed class OriginalWeaponSkinRefreshManager(
         {
             playerInfo = null!;
             refreshMethod = null!;
+            refreshInvocationKind = default;
             return false;
         }
 
@@ -165,28 +196,82 @@ internal sealed class OriginalWeaponSkinRefreshManager(
         if (playerInfo is null)
         {
             refreshMethod = null!;
+            refreshInvocationKind = default;
             return false;
         }
 
-        refreshMethod = playerInfo.GetType()
-            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
-            .FirstOrDefault(method =>
-            {
-                if (!method.Name.Equals(RefreshInventoryMethodName, StringComparison.Ordinal))
-                {
-                    return false;
-                }
+        return TryResolveRefreshMethod(playerInfo, out refreshMethod, out refreshInvocationKind);
+    }
 
-                var parameters = method.GetParameters();
-                return parameters.Length == 1 && parameters[0].ParameterType == typeof(IGameClient);
-            })!;
+    private static bool TryResolveRefreshMethod(
+        object playerInfo,
+        out MethodInfo refreshMethod,
+        out RefreshInvocationKind refreshInvocationKind)
+    {
+        var playerInfoType = playerInfo.GetType();
 
-        return refreshMethod is not null;
+        refreshMethod = playerInfoType.GetMethod(
+            GetPlayerInventoryMethodName,
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            null,
+            [typeof(SteamID), typeof(bool)],
+            null)!;
+
+        if (refreshMethod is not null)
+        {
+            refreshInvocationKind = RefreshInvocationKind.SteamIdWithNotifyFlag;
+            return true;
+        }
+
+        refreshMethod = playerInfoType.GetMethod(
+            RefreshInventoryMethodName,
+            BindingFlags.Instance | BindingFlags.Public,
+            null,
+            [typeof(IGameClient), typeof(bool)],
+            null)!;
+
+        if (refreshMethod is not null)
+        {
+            refreshInvocationKind = RefreshInvocationKind.ClientWithNotifyFlag;
+            return true;
+        }
+
+        refreshMethod = playerInfoType.GetMethod(
+            RefreshInventoryMethodName,
+            BindingFlags.Instance | BindingFlags.Public,
+            null,
+            [typeof(IGameClient)],
+            null)!;
+
+        if (refreshMethod is not null)
+        {
+            refreshInvocationKind = RefreshInvocationKind.Client;
+            return true;
+        }
+
+        refreshInvocationKind = default;
+        return false;
+    }
+
+    private static object?[] BuildRefreshArguments(RefreshInvocationKind refreshInvocationKind, IGameClient client)
+        => refreshInvocationKind switch
+        {
+            RefreshInvocationKind.ClientWithNotifyFlag => [client, false],
+            RefreshInvocationKind.SteamIdWithNotifyFlag => [client.SteamId, false],
+            _ => [client]
+        };
+
+    internal enum RefreshInvocationKind
+    {
+        Client = 0,
+        ClientWithNotifyFlag,
+        SteamIdWithNotifyFlag
     }
 
     private void ClearCache()
     {
         _cachedPlayerInfo = null;
         _cachedRefreshMethod = null;
+        _cachedRefreshInvocationKind = default;
     }
 }

@@ -26,6 +26,11 @@ internal sealed class TextManager(InterfaceBridge bridge) : ITextManager, IManag
         ["ws.menu.knives"] = "Knives",
         ["ws.menu.default_knife"] = "Default Knife",
         ["ws.menu.default_knife_finish"] = "Default Finish",
+        ["ws.menu.wear.factory_new"] = "Factory New",
+        ["ws.menu.wear.minimal_wear"] = "Minimal Wear",
+        ["ws.menu.wear.field_tested"] = "Field-Tested",
+        ["ws.menu.wear.well_worn"] = "Well-Worn",
+        ["ws.menu.wear.battle_scarred"] = "Battle-Scarred",
         ["ws.menu.gloves"] = "Gloves",
         ["ws.menu.agents"] = "Agents",
         ["ws.menu.music"] = "Music Kits",
@@ -37,7 +42,7 @@ internal sealed class TextManager(InterfaceBridge bridge) : ITextManager, IManag
         ["ws.chat.refresh_started"] = "Refreshing WeaponSkin inventory.",
         ["ws.chat.refresh_done"] = "WeaponSkin inventory refreshed.",
         ["ws.chat.saved"] = "Selection saved.",
-        ["ws.chat.saved_next_spawn"] = "Selection saved and synced with WeaponSkin. Some changes still apply on next spawn or when you receive the weapon again.",
+        ["ws.chat.saved_next_spawn"] = "Selection saved. Applies from the next round, next spawn, or when you receive the weapon again.",
         ["ws.chat.save_failed"] = "Failed to save your selection. Local menu data was reloaded from WeaponSkin storage.",
         ["ws.chat.no_active_weapon"] = "You need an active weapon first.",
         ["ws.chat.no_skin_selected"] = "No saved skin was found for the active weapon.",
@@ -80,16 +85,11 @@ internal sealed class TextManager(InterfaceBridge bridge) : ITextManager, IManag
         {
             try
             {
-                if (_localizerManager.TryGetLocalizer(client, out var localizer))
-                {
-                    var localized = args.Length > 0
-                        ? localizer.Format(key, args)
-                        : localizer.TryGet(key);
+                var localized = _localizerManager.For(client).Text(key, args.AsSpan());
 
-                    if (!string.IsNullOrWhiteSpace(localized) && !localized.Equals(key, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return localized;
-                    }
+                if (!string.IsNullOrWhiteSpace(localized) && !localized.Equals(key, StringComparison.OrdinalIgnoreCase))
+                {
+                    return localized;
                 }
             }
             catch
@@ -131,10 +131,6 @@ internal sealed class TextManager(InterfaceBridge bridge) : ITextManager, IManag
         Directory.CreateDirectory(localeDirectory);
 
         var targetPath = Path.Combine(localeDirectory, $"{LocaleFileName}.json");
-
-        if (!File.Exists(targetPath))
-        {
-            File.Copy(sourcePath, targetPath);
-        }
+        File.Copy(sourcePath, targetPath, overwrite: true);
     }
 }
