@@ -1,4 +1,4 @@
-using System.Collections.Frozen;
+﻿using System.Collections.Frozen;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -114,25 +114,84 @@ internal sealed class CatalogManager(
         ["weapon_knife_kukri"] = "Kukri Knife",
     }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly FrozenDictionary<ushort, string> PaintVariantFallbacks = new Dictionary<ushort, string>
+    private static readonly FrozenDictionary<int, string> WeaponClassByDefindex = new Dictionary<int, string>
     {
-        [415] = "Ruby",
-        [416] = "Sapphire",
-        [417] = "Black Pearl",
-        [418] = "Phase 1",
-        [419] = "Phase 2",
-        [420] = "Phase 3",
-        [421] = "Phase 4",
-        [568] = "Emerald",
-        [569] = "Phase 1",
-        [570] = "Phase 2",
-        [571] = "Phase 3",
-        [572] = "Phase 4",
-        [1119] = "Emerald",
-        [1120] = "Phase 1",
-        [1121] = "Phase 2",
-        [1122] = "Phase 3",
-        [1123] = "Phase 4",
+        [1] = "weapon_deagle",
+        [2] = "weapon_elite",
+        [3] = "weapon_fiveseven",
+        [4] = "weapon_glock",
+        [7] = "weapon_ak47",
+        [8] = "weapon_aug",
+        [9] = "weapon_awp",
+        [10] = "weapon_famas",
+        [11] = "weapon_g3sg1",
+        [13] = "weapon_galilar",
+        [14] = "weapon_m249",
+        [16] = "weapon_m4a1",
+        [17] = "weapon_mac10",
+        [19] = "weapon_p90",
+        [23] = "weapon_mp5sd",
+        [24] = "weapon_ump45",
+        [25] = "weapon_xm1014",
+        [26] = "weapon_bizon",
+        [27] = "weapon_mag7",
+        [28] = "weapon_negev",
+        [29] = "weapon_sawedoff",
+        [30] = "weapon_tec9",
+        [31] = "weapon_taser",
+        [32] = "weapon_hkp2000",
+        [33] = "weapon_mp7",
+        [34] = "weapon_mp9",
+        [35] = "weapon_nova",
+        [36] = "weapon_p250",
+        [38] = "weapon_scar20",
+        [39] = "weapon_sg556",
+        [40] = "weapon_ssg08",
+        [60] = "weapon_m4a1_silencer",
+        [61] = "weapon_usp_silencer",
+        [63] = "weapon_cz75a",
+        [64] = "weapon_revolver",
+        [500] = "weapon_bayonet",
+        [503] = "weapon_knife_css",
+        [505] = "weapon_knife_flip",
+        [506] = "weapon_knife_gut",
+        [507] = "weapon_knife_karambit",
+        [508] = "weapon_knife_m9_bayonet",
+        [509] = "weapon_knife_tactical",
+        [512] = "weapon_knife_falchion",
+        [514] = "weapon_knife_survival_bowie",
+        [515] = "weapon_knife_butterfly",
+        [516] = "weapon_knife_push",
+        [517] = "weapon_knife_cord",
+        [518] = "weapon_knife_canis",
+        [519] = "weapon_knife_ursus",
+        [520] = "weapon_knife_gypsy_jackknife",
+        [521] = "weapon_knife_outdoor",
+        [522] = "weapon_knife_stiletto",
+        [523] = "weapon_knife_widowmaker",
+        [525] = "weapon_knife_skeleton",
+        [526] = "weapon_knife_kukri",
+    }.ToFrozenDictionary();
+
+    private static readonly FrozenDictionary<ushort, string> PaintVariantLocaleKeys = new Dictionary<ushort, string>
+    {
+        [415] = "ws.variant.ruby",
+        [416] = "ws.variant.sapphire",
+        [417] = "ws.variant.black_pearl",
+        [418] = "ws.variant.phase_1",
+        [419] = "ws.variant.phase_2",
+        [420] = "ws.variant.phase_3",
+        [421] = "ws.variant.phase_4",
+        [568] = "ws.variant.emerald",
+        [569] = "ws.variant.phase_1",
+        [570] = "ws.variant.phase_2",
+        [571] = "ws.variant.phase_3",
+        [572] = "ws.variant.phase_4",
+        [1119] = "ws.variant.emerald",
+        [1120] = "ws.variant.phase_1",
+        [1121] = "ws.variant.phase_2",
+        [1122] = "ws.variant.phase_3",
+        [1123] = "ws.variant.phase_4",
     }.ToFrozenDictionary();
 
     private static readonly IReadOnlyList<KnifeOption> KnifeDefinitions =
@@ -166,6 +225,8 @@ internal sealed class CatalogManager(
     private readonly Dictionary<string, IReadOnlyList<AgentOption>> _agentsByLanguage = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, IReadOnlyList<MusicKitOption>> _musicKitsByLanguage = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, IReadOnlyList<MedalOption>> _medalsByLanguage = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, LocalizedCatalogBundle> _catalogBundlesByLanguage = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, Dictionary<string, string>>? _menuLocaleTexts;
 
     public bool Init()
     {
@@ -177,7 +238,7 @@ internal sealed class CatalogManager(
         var musicKits = GetOrLoadCatalog(_musicKitsByLanguage, "en", LoadMusicKits);
         var medals = GetOrLoadCatalog(_medalsByLanguage, "en", LoadMedals);
 
-        logger.LogInformation(
+        logger.LogDebug(
             "Loaded {weaponGroupCount} weapon groups ({weaponPaintCount} paints), {knifeCount} knives, {gloveCount} gloves, {agentCount} agents, {musicCount} music kits, {medalCount} pins",
             weaponPaints.Count,
             weaponPaints.Sum(static group => group.Paints.Count),
@@ -234,29 +295,27 @@ internal sealed class CatalogManager(
 
     private IReadOnlyList<WeaponPaintCatalog> LoadWeaponPaints(string language)
     {
-        var filePath = ResolveLocalizedCatalogFile("skins", language);
-        var data = ReadJson<List<SkinData>>(filePath);
+        var data = GetCatalogBundle(language).Skins;
         var knifeItemIds = KnifeDefinitions
             .Select(static option => (int)option.ItemId!.Value)
             .ToHashSet();
 
         if (data.Count == 0)
         {
-            logger.LogWarning("No weapon skin catalog entries were loaded from {filePath}", filePath);
+            logger.LogWarning("No weapon skin catalog entries were loaded for language {language}", language);
         }
 
-        return BuildWeaponPaintCatalogs(data.Where(item => !knifeItemIds.Contains(item.WeaponDefIndex)));
+        return BuildWeaponPaintCatalogs(language, data.Where(item => !knifeItemIds.Contains(item.WeaponDefIndex)));
     }
 
     private IReadOnlyDictionary<EconItemId, IReadOnlyList<PaintOption>> LoadKnifePaints(string language)
     {
-        var filePath = ResolveLocalizedCatalogFile("skins", language);
-        var data = ReadJson<List<SkinData>>(filePath);
+        var data = GetCatalogBundle(language).Skins;
         var knifeItemIds = KnifeDefinitions
             .Select(static option => (int)option.ItemId!.Value)
             .ToHashSet();
 
-        return BuildWeaponPaintCatalogs(data.Where(item => knifeItemIds.Contains(item.WeaponDefIndex)))
+        return BuildWeaponPaintCatalogs(language, data.Where(item => knifeItemIds.Contains(item.WeaponDefIndex)))
             .ToDictionary(static catalog => catalog.ItemId, static catalog => catalog.Paints);
     }
 
@@ -279,17 +338,16 @@ internal sealed class CatalogManager(
 
     private IReadOnlyList<GloveOption> LoadGloves(string language)
     {
-        var filePath = ResolveLocalizedCatalogFile("gloves", language);
-        var data = ReadJson<List<GloveData>>(filePath);
+        var data = GetCatalogBundle(language).Gloves;
 
         if (data.Count == 0)
         {
-            logger.LogWarning("No glove catalog entries were loaded from {filePath}", filePath);
+            logger.LogWarning("No glove catalog entries were loaded for language {language}", language);
         }
 
         var options = new List<GloveOption>
         {
-            new(0, 0, GetDefaultLabel(language, "Gloves | Default", "\uC7A5\uAC11 | \uAE30\uBCF8")),
+            new(0, 0, GetMenuLocaleText(language, "ws.menu.default_weapon_skin", "Default")),
         };
 
         options.AddRange(data
@@ -302,44 +360,56 @@ internal sealed class CatalogManager(
 
     private IReadOnlyList<MusicKitOption> LoadMusicKits(string language)
     {
-        var filePath = ResolveLocalizedCatalogFile("music", language);
-        var data = ReadJson<List<NamedIdData>>(filePath);
+        var data = GetCatalogBundle(language).Music;
 
         if (data.Count == 0)
         {
-            logger.LogWarning("No music kit catalog entries were loaded from {filePath}", filePath);
+            logger.LogWarning("No music kit catalog entries were loaded for language {language}", language);
         }
 
         var options = new List<MusicKitOption>
         {
-            new(0, GetDefaultLabel(language, "Default Music Kit", "\uAE30\uBCF8 \uBBA4\uC9C1 \uD0B7")),
+            new(0, GetMenuLocaleText(language, "ws.menu.default_weapon_skin", "Default")),
         };
 
-        options.AddRange(data
-            .Select(item => new MusicKitOption((ushort)item.Id, item.Name))
-            .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase));
+        var normalized = data
+            .Select(item => new MusicKitOption((ushort)item.Id, NormalizeOptionName(item.Name)))
+            .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        options.AddRange(EnsureDistinctOptionNames(
+            normalized,
+            static option => option.Name,
+            static option => option.ItemId,
+            static (option, name) => option with { Name = name }));
 
         return options;
     }
 
     private IReadOnlyList<MedalOption> LoadMedals(string language)
     {
-        var filePath = ResolveLocalizedCatalogFile("collectibles", language);
-        var data = ReadJson<List<NamedIdData>>(filePath);
+        var data = GetCatalogBundle(language).Collectibles;
 
         if (data.Count == 0)
         {
-            logger.LogWarning("No collectible catalog entries were loaded from {filePath}", filePath);
+            logger.LogWarning("No collectible catalog entries were loaded for language {language}", language);
         }
 
         var options = new List<MedalOption>
         {
-            new(0, GetDefaultLabel(language, "Default Pin", "\uAE30\uBCF8 \uD540")),
+            new(0, GetMenuLocaleText(language, "ws.menu.default_weapon_skin", "Default")),
         };
 
-        options.AddRange(data
-            .Select(item => new MedalOption((ushort)item.Id, item.Name))
-            .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase));
+        var normalized = data
+            .Select(item => new MedalOption((ushort)item.Id, NormalizeOptionName(item.Name)))
+            .OrderBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        options.AddRange(EnsureDistinctOptionNames(
+            normalized,
+            static option => option.Name,
+            static option => option.ItemId,
+            static (option, name) => option with { Name = name }));
 
         return options;
     }
@@ -348,11 +418,20 @@ internal sealed class CatalogManager(
     {
         var agents = new List<AgentOption>
         {
-            new(0, CStrikeTeam.CT, GetDefaultLabel(language, "Default Agent", "\uAE30\uBCF8 \uC694\uC6D0")),
-            new(0, CStrikeTeam.TE, GetDefaultLabel(language, "Default Agent", "\uAE30\uBCF8 \uC694\uC6D0")),
+            new(0, CStrikeTeam.CT, GetMenuLocaleText(language, "ws.menu.default_weapon_skin", "Default")),
+            new(0, CStrikeTeam.TE, GetMenuLocaleText(language, "ws.menu.default_weapon_skin", "Default")),
         };
 
-        foreach (var definition in bridge.EconItemManager.GetEconItems().Values)
+        var definitions = bridge.EconItemManager?.GetEconItems()?.Values;
+        if (definitions is null)
+        {
+            return agents
+                .OrderBy(static agent => agent.Team)
+                .ThenBy(static agent => agent.Name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+
+        foreach (var definition in definitions)
         {
             if (definition.DefaultLoadoutSlot != 38)
             {
@@ -378,8 +457,26 @@ internal sealed class CatalogManager(
     private string GetCatalogLanguage(IGameClient? client)
         => playerLanguages.GetCatalogLanguage(client);
 
-    private string ResolveLocalizedCatalogFile(string baseName, string language)
-        => ResolveLocalizedFile(baseName, language, Path.Combine(bridge.ModuleDirectory, "Data"));
+    private LocalizedCatalogBundle GetCatalogBundle(string language)
+        => GetOrLoadCatalog(_catalogBundlesByLanguage, language, LoadCatalogBundle);
+
+    private LocalizedCatalogBundle LoadCatalogBundle(string language)
+    {
+        var dataRoot = Path.Combine(bridge.ModuleDirectory, "Data");
+        var bundlePath = ResolveLocalizedFile("catalog", language, dataRoot);
+        if (File.Exists(bundlePath))
+        {
+            return ReadJson<LocalizedCatalogBundle>(bundlePath);
+        }
+
+        return new LocalizedCatalogBundle
+        {
+            Skins = ReadJson<List<SkinData>>(ResolveLocalizedFile("skins", language, dataRoot)),
+            Gloves = ReadJson<List<GloveData>>(ResolveLocalizedFile("gloves", language, dataRoot)),
+            Music = ReadJson<List<NamedIdData>>(ResolveLocalizedFile("music", language, dataRoot)),
+            Collectibles = ReadJson<List<NamedIdData>>(ResolveLocalizedFile("collectibles", language, dataRoot)),
+        };
+    }
 
     private static string ResolveLocalizedFile(string baseName, string language, params string[] roots)
     {
@@ -420,23 +517,32 @@ internal sealed class CatalogManager(
         return value;
     }
 
-    private IReadOnlyList<WeaponPaintCatalog> BuildWeaponPaintCatalogs(IEnumerable<SkinData> data)
+    private IReadOnlyList<WeaponPaintCatalog> BuildWeaponPaintCatalogs(string language, IEnumerable<SkinData> data)
     {
         return data
-            .GroupBy(static item => new { item.WeaponDefIndex, item.WeaponName })
+            .Select(NormalizeSkinData)
+            .Where(static item => item.WeaponDefIndex > 0)
+            .Where(IsSupportedPaintSelection)
+            .GroupBy(static item => item.WeaponDefIndex)
             .Select(group =>
             {
-                var paints = group
+                var paints = EnsureDistinctPaintNames(language, group
                     .OrderBy(static item => item.PaintName, StringComparer.OrdinalIgnoreCase)
-                    .Select(item => new PaintOption((ushort)item.Paint, DecoratePaintName(item.PaintName, (ushort)item.Paint)))
-                    .ToArray();
+                    .ThenBy(static item => item.Paint)
+                    .Select(item => new PaintOption((ushort)item.Paint, DecoratePaintName(language, item.PaintName, (ushort)item.Paint)))
+                    .ToArray());
 
-                var fallbackName = WeaponNamesByClass.TryGetValue(group.Key.WeaponName, out var name)
+                var weaponClass = group
+                    .Select(static item => item.WeaponName)
+                    .FirstOrDefault(static name => !string.IsNullOrWhiteSpace(name))
+                    ?? string.Empty;
+
+                var fallbackName = WeaponNamesByClass.TryGetValue(weaponClass, out var name)
                     ? name
-                    : group.Key.WeaponName;
+                    : weaponClass;
 
                 return new WeaponPaintCatalog(
-                    (EconItemId)group.Key.WeaponDefIndex,
+                    (EconItemId)group.Key,
                     ExtractDisplayName(fallbackName, paints),
                     paints);
             })
@@ -444,28 +550,92 @@ internal sealed class CatalogManager(
             .ToArray();
     }
 
-    private string DecoratePaintName(string rawName, ushort paintId)
+    private SkinData NormalizeSkinData(SkinData item)
+        => new()
+        {
+            WeaponDefIndex = item.WeaponDefIndex,
+            WeaponName = ResolveCanonicalWeaponClass(item.WeaponDefIndex, item.WeaponName),
+            Paint = item.Paint,
+            PaintName = item.PaintName,
+        };
+
+    private bool IsSupportedPaintSelection(SkinData item)
+        => item.Paint == 0 || bridge.EconItemManager.GetPaintKits().ContainsKey((uint)item.Paint);
+
+    private IReadOnlyList<PaintOption> EnsureDistinctPaintNames(string language, IReadOnlyList<PaintOption> paints)
+    {
+        var duplicateNames = paints
+            .GroupBy(static paint => paint.Name, StringComparer.OrdinalIgnoreCase)
+            .Where(static group => group.Count() > 1)
+            .Select(static group => group.Key)
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        if (duplicateNames.Count == 0)
+        {
+            return paints.ToArray();
+        }
+
+        var result = new PaintOption[paints.Count];
+
+        for (var index = 0; index < paints.Count; index++)
+        {
+            var paint = paints[index];
+
+            result[index] = duplicateNames.Contains(paint.Name)
+                ? paint with { Name = DisambiguatePaintName(language, paint.Name, paint.PaintId) }
+                : paint;
+        }
+
+        return result;
+    }
+
+    private string DisambiguatePaintName(string language, string name, ushort paintId)
+    {
+        if (TryResolvePaintVariant(language, paintId, out var variant)
+            && !string.IsNullOrWhiteSpace(variant)
+            && !name.Contains(variant, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{name} ({variant})";
+        }
+
+        return $"{name} [Paint {paintId}]";
+    }
+
+    private static string ResolveCanonicalWeaponClass(int weaponDefIndex, string weaponName)
+        => WeaponClassByDefindex.TryGetValue(weaponDefIndex, out var canonical)
+            ? canonical
+            : weaponName;
+
+    private string DecoratePaintName(string language, string rawName, ushort paintId)
     {
         var name = NormalizePaintName(rawName);
 
-        return TryResolvePaintVariant(paintId, out var variant)
+        return TryResolvePaintVariant(language, paintId, out var variant)
                && !name.Contains(variant, StringComparison.OrdinalIgnoreCase)
             ? $"{name} ({variant})"
             : name;
     }
 
-    private bool TryResolvePaintVariant(ushort paintId, out string variant)
+    private bool TryResolvePaintVariant(string language, ushort paintId, out string variant)
     {
         if (bridge.EconItemManager.GetPaintKits().TryGetValue(paintId, out var paintKit)
-            && TryParsePaintVariant($"{paintKit.Name}|{paintKit.DescriptionString}|{paintKit.DescriptionTag}", out variant))
+            && TryParsePaintVariant($"{paintKit.Name}|{paintKit.DescriptionString}|{paintKit.DescriptionTag}", out var variantKey))
         {
+            variant = GetMenuLocaleText(language, variantKey, GetDefaultVariantText(variantKey));
             return true;
         }
 
-        return PaintVariantFallbacks.TryGetValue(paintId, out variant!);
+        if (PaintVariantLocaleKeys.TryGetValue(paintId, out var fallbackKey))
+        {
+            variant = GetMenuLocaleText(language, fallbackKey, GetDefaultVariantText(fallbackKey));
+            return true;
+        }
+
+        variant = string.Empty;
+        return false;
     }
 
-    private static bool TryParsePaintVariant(string source, out string variant)
+    private static bool TryParsePaintVariant(string source, out string variantKey)
     {
         var normalized = source
             .Replace('_', ' ')
@@ -475,67 +645,128 @@ internal sealed class CatalogManager(
         if (normalized.Contains("blackpearl", StringComparison.Ordinal)
             || normalized.Contains("black pearl", StringComparison.Ordinal))
         {
-            variant = "Black Pearl";
+            variantKey = "ws.variant.black_pearl";
             return true;
         }
 
         if (normalized.Contains("sapphire", StringComparison.Ordinal))
         {
-            variant = "Sapphire";
+            variantKey = "ws.variant.sapphire";
             return true;
         }
 
         if (normalized.Contains("ruby", StringComparison.Ordinal))
         {
-            variant = "Ruby";
+            variantKey = "ws.variant.ruby";
             return true;
         }
 
         if (normalized.Contains("emerald", StringComparison.Ordinal))
         {
-            variant = "Emerald";
+            variantKey = "ws.variant.emerald";
             return true;
         }
 
         if (normalized.Contains("phase 1", StringComparison.Ordinal) || normalized.Contains("phase1", StringComparison.Ordinal))
         {
-            variant = "Phase 1";
+            variantKey = "ws.variant.phase_1";
             return true;
         }
 
         if (normalized.Contains("phase 2", StringComparison.Ordinal) || normalized.Contains("phase2", StringComparison.Ordinal))
         {
-            variant = "Phase 2";
+            variantKey = "ws.variant.phase_2";
             return true;
         }
 
         if (normalized.Contains("phase 3", StringComparison.Ordinal) || normalized.Contains("phase3", StringComparison.Ordinal))
         {
-            variant = "Phase 3";
+            variantKey = "ws.variant.phase_3";
             return true;
         }
 
         if (normalized.Contains("phase 4", StringComparison.Ordinal) || normalized.Contains("phase4", StringComparison.Ordinal))
         {
-            variant = "Phase 4";
+            variantKey = "ws.variant.phase_4";
             return true;
         }
 
-        variant = string.Empty;
+        variantKey = string.Empty;
         return false;
     }
 
+    private static string GetDefaultVariantText(string variantKey)
+        => variantKey switch
+        {
+            "ws.variant.ruby" => "Ruby",
+            "ws.variant.sapphire" => "Sapphire",
+            "ws.variant.black_pearl" => "Black Pearl",
+            "ws.variant.emerald" => "Emerald",
+            "ws.variant.phase_1" => "Phase 1",
+            "ws.variant.phase_2" => "Phase 2",
+            "ws.variant.phase_3" => "Phase 3",
+            "ws.variant.phase_4" => "Phase 4",
+            _ => variantKey,
+        };
+
     private static string NormalizePaintName(string rawName)
     {
-        var name = rawName.Trim();
+        var name = NormalizeOptionName(rawName);
 
-        if (name.StartsWith("Ёк ", StringComparison.Ordinal))
+        if (name.StartsWith("?克 ", StringComparison.Ordinal))
         {
-            name = $"★ {name["Ёк ".Length..]}";
+            name = $"??{name["?克 ".Length..]}";
         }
 
         return name;
     }
+
+    private static IReadOnlyList<TOption> EnsureDistinctOptionNames<TOption>(
+        IReadOnlyList<TOption> options,
+        Func<TOption, string> getName,
+        Func<TOption, ushort> getId,
+        Func<TOption, string, TOption> withName)
+    {
+        var duplicateNames = options
+            .GroupBy(getName, StringComparer.OrdinalIgnoreCase)
+            .Where(static group => group.Count() > 1)
+            .Select(static group => group.Key)
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+        if (duplicateNames.Count == 0)
+        {
+            return options.ToArray();
+        }
+
+        return options
+            .Select(option =>
+            {
+                var name = getName(option);
+                return duplicateNames.Contains(name)
+                    ? withName(option, $"{name} [ID {getId(option)}]")
+                    : option;
+            })
+            .ToArray();
+    }
+
+    private static string NormalizeOptionName(string rawName)
+    {
+        var name = rawName.Trim();
+        var pipeIndex = name.IndexOf('|');
+
+        if (pipeIndex < 0)
+        {
+            return CollapseWhitespace(name);
+        }
+
+        var left = CollapseWhitespace(name[..pipeIndex]);
+        var right = CollapseWhitespace(name[(pipeIndex + 1)..]);
+
+        return string.IsNullOrWhiteSpace(left) ? right : $"{left} | {right}";
+    }
+
+    private static string CollapseWhitespace(string value)
+        => string.Join(" ", value.Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
 
     private static string ExtractDisplayName(string fallbackName, IReadOnlyList<PaintOption> paints)
     {
@@ -555,9 +786,6 @@ internal sealed class CatalogManager(
 
         return string.IsNullOrWhiteSpace(prefix) ? fallbackName : prefix;
     }
-
-    private static string GetDefaultLabel(string language, string english, string korean)
-        => language.Equals("ko", StringComparison.OrdinalIgnoreCase) ? korean : english;
 
     private static CStrikeTeam? ResolveAgentTeam(IEconItemDefinition definition)
     {
@@ -601,6 +829,98 @@ internal sealed class CatalogManager(
         return JsonSerializer.Deserialize<T>(json, JsonOptions) ?? new();
     }
 
+    private string GetMenuLocaleText(string language, string key, string fallback)
+    {
+        var texts = _menuLocaleTexts ??= LoadMenuLocaleTexts();
+        if (!texts.TryGetValue(key, out var translations))
+        {
+            return fallback;
+        }
+
+        foreach (var localeKey in EnumerateMenuLocaleKeys(language))
+        {
+            if (translations.TryGetValue(localeKey, out var value) && !string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return fallback;
+    }
+
+    private Dictionary<string, Dictionary<string, string>> LoadMenuLocaleTexts()
+    {
+        var localePath = Path.Combine(bridge.ModuleDirectory, "locale", "WeaponSkin.Menu.json");
+        if (!File.Exists(localePath))
+        {
+            return new(StringComparer.OrdinalIgnoreCase);
+        }
+
+        using var document = JsonDocument.Parse(File.ReadAllText(localePath));
+        var result = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var key in document.RootElement.EnumerateObject())
+        {
+            if (key.Value.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var translations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var translation in key.Value.EnumerateObject())
+            {
+                translations[translation.Name] = translation.Value.GetString() ?? string.Empty;
+            }
+
+            result[key.Name] = translations;
+        }
+
+        return result;
+    }
+
+    private static IEnumerable<string> EnumerateMenuLocaleKeys(string language)
+    {
+        if (CatalogLanguageToLocaleKey.TryGetValue(language, out var localeKey))
+        {
+            yield return localeKey;
+        }
+
+        yield return "en-us";
+    }
+
+    private static readonly FrozenDictionary<string, string> CatalogLanguageToLocaleKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["bg"] = "bg-bg",
+        ["cs"] = "cs-cz",
+        ["da"] = "da-dk",
+        ["de"] = "de-de",
+        ["el"] = "el-gr",
+        ["en"] = "en-us",
+        ["es-ES"] = "es-es",
+        ["es-MX"] = "es-419",
+        ["fi"] = "fi-fi",
+        ["fr"] = "fr-fr",
+        ["hu"] = "hu-hu",
+        ["id"] = "id-id",
+        ["it"] = "it-it",
+        ["ja"] = "ja-jp",
+        ["ko"] = "ko-kr",
+        ["no"] = "nb-no",
+        ["nl"] = "nl-nl",
+        ["pl"] = "pl-pl",
+        ["pt-BR"] = "pt-br",
+        ["pt-PT"] = "pt-pt",
+        ["ro"] = "ro-ro",
+        ["ru"] = "ru-ru",
+        ["sv"] = "sv-se",
+        ["th"] = "th-th",
+        ["tr"] = "tr-tr",
+        ["uk"] = "uk-ua",
+        ["vi"] = "vi-vn",
+        ["zh-CN"] = "zh-cn",
+        ["zh-TW"] = "zh-tw",
+    }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+
     private sealed record SkinData
     {
         [JsonPropertyName("weapon_defindex")]
@@ -641,4 +961,20 @@ internal sealed class CatalogManager(
         [JsonPropertyName("name")]
         public string Name { get; init; } = string.Empty;
     }
+
+    private sealed record LocalizedCatalogBundle
+    {
+        [JsonPropertyName("skins")]
+        public List<SkinData> Skins { get; init; } = [];
+
+        [JsonPropertyName("gloves")]
+        public List<GloveData> Gloves { get; init; } = [];
+
+        [JsonPropertyName("music")]
+        public List<NamedIdData> Music { get; init; } = [];
+
+        [JsonPropertyName("collectibles")]
+        public List<NamedIdData> Collectibles { get; init; } = [];
+    }
 }
+

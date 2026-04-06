@@ -1,47 +1,61 @@
 # WeaponSkin.Menu
 
-A ModSharp plugin for Counter-Strike 2 servers. Adds an in-game menu for `WeaponSkin` and saves player selections into the existing `ws_*` tables.
+`WeaponSkin.Menu` is a menu-based frontend for the original [`WeaponSkin`](https://github.com/Ariiisu/WeaponSkin) module on [`ModSharp`](https://github.com/Kxnrl/ModSharp-public).
 
-## Features
+It lets players manage their cosmetics in-game without editing database rows manually.
 
-- **In-Game Menu:** Opens a `ws` menu for weapon skins, knives, gloves, agents, music kits, pins, and StatTrak.
-- **WeaponSkin Integration:** Uses the existing `WeaponSkin` data model and sync flow instead of introducing a separate schema.
-- **Localized Catalogs:** Loads multi-language item catalogs for supported client languages.
-- **Configurable Apply Behavior:** Supports deferred weapon apply and configurable live apply for team cosmetics.
+## What It Supports
 
-## Requirements & Dependencies
+- Weapon skins
+- Knife selection and knife finish selection
+- Glove selection
+- Agent selection
+- Music kit selection
+- Pin selection
+- StatTrak toggle for the active weapon
+- Wear preset selection for weapons, knives, and gloves
 
-**Core**
-- .NET 10.0
-- [ModSharp 2.x](https://github.com/Kxnrl/modsharp-public)
-- [WeaponSkin](https://github.com/Ariiisu/WeaponSkin/releases)
+## What It Does Not Support
 
-**Plugin Dependencies**
-- MenuManager
-- LocalizerManager
+- Stickers
+- Keychains
+- Nametags
+- Web UI
+
+## Requirements
+
+- [`ModSharp`](https://github.com/Kxnrl/ModSharp-public)
+- [`WeaponSkin`](https://github.com/Ariiisu/WeaponSkin) module
+- `MenuManager`
+- `LocalizerManager`
+
+`WeaponSkin.Menu` does not replace [`WeaponSkin`](https://github.com/Ariiisu/WeaponSkin). It uses the same underlying storage and refresh flow.
 
 ## Installation
 
-1. Download the latest release from the [Releases](https://github.com/Tsukasa-Nefren/weaponskin.menu/releases) page.
-2. Extract the `.zip` file into your server's root directory so the `sharp` folder merges automatically.
-3. Make sure [WeaponSkin](https://github.com/Ariiisu/WeaponSkin/releases) is already installed on the server.
-4. Start or reload the server.
+1. Download the release zip.
+2. Extract the `sharp/` folder into your server.
+3. Make sure the original `WeaponSkin` module is already installed and working.
+4. Restart the server or reload the module.
 
-**Directory Structure:**
-```text
-sharp/
-├─ modules/
-│  └─ WeaponSkin.Menu/
-│     └─ WeaponSkin.Menu.dll
-├─ locales/
-│  └─ WeaponSkin.Menu.json
-└─ configs/
-   └─ weaponskin.menu.jsonc
-```
+## Commands
 
-## Configuration
+Player commands:
 
-**Path:** `sharp/configs/weaponskin.menu.jsonc`
+- `!ws` : open the main menu
+- `!knife` : open the knife menu
+- `!gloves` : open the glove menu
+- `!agents` : open the agent menu
+- `!music` : open the music kit menu
+- `!pins` : open the pin menu
+- `!stattrak` : toggle StatTrak for the active weapon
+- `!st` : short alias for StatTrak toggle
+
+If your setup uses the standard ModSharp client command flow, the console equivalents use the `ms_` prefix, for example `ms_ws`.
+
+## Apply Behavior
+
+Default config:
 
 ```jsonc
 {
@@ -58,29 +72,34 @@ sharp/
 }
 ```
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `Apply.Weapons` | `Deferred` only syncs `WeaponSkin` cache. `Live` also tries immediate in-round apply. | `"Deferred"` |
-| `Apply.TeamCosmetics` | Apply behavior for gloves, agents, music kits, and pins. | `"Live"` |
-| `Sync.UseClientCommandFallback` | Falls back to issuing `ws_refresh` if direct sync invocation fails. | `true` |
-| `Selection.WriteBothTeamsWhenSpectator` | Saves team cosmetics to both teams when the player is not currently on CT/TE. | `true` |
+Meaning:
 
-## Commands
+- `Weapons = Deferred`
+  Weapon skins are saved immediately, but usually apply on next spawn, next weapon receive, or next time the weapon is recreated.
+- `TeamCosmetics = Live`
+  Gloves, agents, music kits, and pins try to apply immediately.
+- `UseClientCommandFallback = true`
+  If direct `WeaponSkin` refresh fails, the menu can fall back to issuing `ws_refresh`.
+- `WriteBothTeamsWhenSpectator = true`
+  If a player is not currently on CT or T, team cosmetics are written to both teams.
 
-| Command | Description |
-|---------|-------------|
-| `ws` | Opens the main WeaponSkin menu |
-| `ws_menu` | Opens the main WeaponSkin menu |
-| `ws_knife` | Opens the knife menu |
-| `ws_gloves` | Opens the glove menu |
-| `ws_agents` | Opens the agent menu |
-| `ws_music` | Opens the music kit menu |
-| `ws_pins` | Opens the pin menu |
-| `ws_stattrak` | Toggles StatTrak |
-| `ws_st` | Toggles StatTrak |
+## Storage
+
+This module uses the same cosmetic data model as `WeaponSkin`.
+
+Supported database backends:
+
+- SQLite
+- MySQL
+- PostgreSQL
 
 ## Notes
 
-- This repository stays separate from the original `WeaponSkin` source.
-- Database settings are still read from `sharp/configs/weaponskin.jsonc`.
-- The module writes to the existing `ws_*` tables.
+- Weapon and knife paints are resolved from bundled catalog data.
+- Agent definitions are resolved from the runtime econ data exposed by the game.
+- Doppler and Gamma Doppler variants are separated by paint id, not just by the display name.
+- Some cosmetics are applied immediately, while others depend on the original `WeaponSkin` refresh path.
+
+## Version
+
+Current public release target: `1.1.0`

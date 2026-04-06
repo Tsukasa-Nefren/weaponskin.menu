@@ -1,0 +1,3 @@
+[submodule "external/WeaponSkin"]
+	path = external/WeaponSkin
+	url = https://github.com/Ariiisu/WeaponSkin.git

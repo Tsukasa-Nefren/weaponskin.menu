@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Ptr.Shared.Extensions;
+using System.Runtime.InteropServices;
 using Sharp.Shared.Enums;
 using Sharp.Shared.GameEntities;
 using Sharp.Shared.GameObjects;
@@ -35,6 +36,8 @@ internal sealed class LiveApplyService(
     ILogger<LiveApplyService> logger) : ILiveApplyService
 {
     private const int MedalRankIndex = 5;
+    private const int AgentVoPrefixOffset = 0x3A8;
+    private static readonly TimeSpan GloveRefreshDelay = TimeSpan.FromMilliseconds(80);
     private static readonly TimeSpan WeaponRefreshDelay = TimeSpan.FromMilliseconds(200);
 
     public async Task ApplyAsync(
@@ -51,6 +54,31 @@ internal sealed class LiveApplyService(
         }
 
         await bridge.ModSharp.InvokeFrameActionAsync(() => ApplyImmediate(client, targets)).ConfigureAwait(false);
+
+        if (targets.HasFlag(LiveApplyTarget.Gloves))
+        {
+            try
+            {
+                await Task.Delay(GloveRefreshDelay).ConfigureAwait(false);
+
+                if (bridge.ClientManager.GetGameClient(steamId) is not { } delayedClient || !IsValidClient(delayedClient))
+                {
+                    return;
+                }
+
+                await bridge.ModSharp.InvokeFrameActionAsync(() =>
+                {
+                    if (bridge.ClientManager.GetGameClient(steamId) is { } current && IsValidClient(current))
+                    {
+                        ApplyDeferredGloves(current);
+                    }
+                }).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to live refresh gloves for {steamId}", steamId);
+            }
+        }
 
         if (!targets.HasFlag(LiveApplyTarget.Weapons))
         {
@@ -120,8 +148,30 @@ internal sealed class LiveApplyService(
 
         if (targets.HasFlag(LiveApplyTarget.Gloves))
         {
-            ApplyGloves(client, controller, pawn, team);
+            GloveVisualRefresh.PrepareModelRefresh(pawn);
         }
+    }
+
+    private void ApplyDeferredGloves(IGameClient client)
+    {
+        if (!IsValidClient(client)
+            || client.GetPlayerController() is not { } controller
+            || !controller.IsValid()
+            || controller.GetPlayerPawn() is not { } pawn
+            || !pawn.IsValid()
+            || !pawn.IsAlive)
+        {
+            return;
+        }
+
+        var team = ResolveCurrentTeam(controller);
+
+        if (team is not (CStrikeTeam.CT or CStrikeTeam.TE))
+        {
+            return;
+        }
+
+        ApplyGloves(client, controller, pawn, team);
     }
 
     private void ApplyMusicKit(IGameClient client, IPlayerController controller, CStrikeTeam team)
@@ -157,13 +207,19 @@ internal sealed class LiveApplyService(
 
         if (agentId is null
             || bridge.EconItemManager.GetEconItemDefinitionByIndex(agentId.Value) is not
-                { DefaultLoadoutSlot: (int)LoadoutSlot.ClothingCustomPlayer, BaseDisplayModel: { Length: > 0 } model })
+                { DefaultLoadoutSlot: (int)LoadoutSlot.ClothingCustomPlayer, BaseDisplayModel: { Length: > 0 } model } definition)
         {
             return;
         }
 
         pawn.SetNetVar("m_nCharacterDefIndex", agentId.Value);
         pawn.SetModel(model);
+
+        if (TryReadAgentVoiceMetadata(definition, out var voPrefix, out var hasFemaleVoice))
+        {
+            pawn.SetNetVar("m_bHasFemaleVoice", hasFemaleVoice);
+            pawn.SetNetVarUtlString("m_strVOPrefix", voPrefix, false, 0);
+        }
     }
 
     private void ApplyGloves(IGameClient client, IPlayerController controller, IPlayerPawn pawn, CStrikeTeam team)
@@ -171,7 +227,7 @@ internal sealed class LiveApplyService(
         if (playerInfo.GetPlayerGloves(client, team) is { } glovesId
             && playerInfo.GetPlayerWeaponSkin(client, (EconItemId)glovesId) is { } cosmetics)
         {
-            pawn.GiveGloves(glovesId, cosmetics.PaintId, cosmetics.Wear, (int)cosmetics.Seed);
+            GloveVisualRefresh.Apply(pawn, (ulong)client.SteamId, (int)glovesId, cosmetics.PaintId, cosmetics.Wear, (int)cosmetics.Seed);
             return;
         }
 
@@ -181,7 +237,7 @@ internal sealed class LiveApplyService(
             return;
         }
 
-        pawn.GiveGloves((EconGlovesId)defaultGloveId.Value, 0, 0f, 0);
+        GloveVisualRefresh.Apply(pawn, (ulong)client.SteamId, defaultGloveId.Value, 0, 0f, 0);
     }
 
     private void RefreshWeapons(IGameClient client, EconItemId? weaponItemId, bool refreshKnife)
@@ -208,7 +264,7 @@ internal sealed class LiveApplyService(
 
             if (weapon is null
                 || !weapon.IsValid()
-                || weapon.Slot is not (GearSlot.Rifle or GearSlot.Pistol or GearSlot.Knife)
+                || !ShouldTreatWeaponAsRefreshable(weapon.Slot, (EconItemId)weapon.ItemDefinitionIndex, snapshot?.Classname ?? weapon.GetWeaponClassname())
                 || snapshot is null)
             {
                 continue;
@@ -247,7 +303,9 @@ internal sealed class LiveApplyService(
             }
         }
 
-        foreach (var snapshot in snapshots.Where(static snapshot => snapshot.Slot is GearSlot.Rifle or GearSlot.Pistol))
+        foreach (var snapshot in snapshots.Where(static snapshot =>
+                     ShouldTreatWeaponAsRefreshable(snapshot.Slot, snapshot.ItemId, snapshot.Classname)
+                     && snapshot.Slot != GearSlot.Knife))
         {
             var recreatedWeapon = pawn.GiveNamedItem(snapshot.Classname);
 
@@ -256,7 +314,7 @@ internal sealed class LiveApplyService(
                 continue;
             }
 
-            RestoreAmmo(recreatedWeapon, snapshot);
+            RestoreWeaponState(recreatedWeapon, snapshot);
 
             if (snapshot.WasActive)
             {
@@ -270,7 +328,7 @@ internal sealed class LiveApplyService(
         }
     }
 
-    private static void RestoreAmmo(IBaseWeapon weapon, WeaponSnapshot snapshot)
+    private static void RestoreWeaponState(IBaseWeapon weapon, WeaponSnapshot snapshot)
     {
         if (snapshot.Clip >= 0)
         {
@@ -281,6 +339,19 @@ internal sealed class LiveApplyService(
         {
             weapon.SetReserveAmmo(snapshot.ReserveAmmo);
         }
+
+        weapon.NextPrimaryAttackTick = snapshot.NextPrimaryAttackTick;
+        weapon.NextSecondaryAttackTick = snapshot.NextSecondaryAttackTick;
+        weapon.WeaponMode = snapshot.WeaponMode;
+        weapon.InReload = snapshot.InReload;
+        weapon.SilencerOn = snapshot.SilencerOn;
+        weapon.WeaponGameplayAnimState = snapshot.WeaponGameplayAnimState;
+        weapon.WeaponGameplayAnimStateTimestamp = snapshot.WeaponGameplayAnimStateTimestamp;
+        weapon.AccuracyPenalty = snapshot.AccuracyPenalty;
+        weapon.LastAccuracyUpdateTime = snapshot.LastAccuracyUpdateTime;
+        weapon.RecoilIndex = snapshot.RecoilIndex;
+        weapon.TimeSilencerSwitchComplete = snapshot.TimeSilencerSwitchComplete;
+        weapon.LastShotTime = snapshot.LastShotTime;
     }
 
     private static WeaponSnapshot? CreateSnapshot(IBaseWeapon weapon, IBaseWeapon? activeWeapon)
@@ -299,6 +370,18 @@ internal sealed class LiveApplyService(
             classname,
             weapon.Clip,
             weapon.ReserveAmmo,
+            weapon.NextPrimaryAttackTick,
+            weapon.NextSecondaryAttackTick,
+            weapon.WeaponMode,
+            weapon.InReload,
+            weapon.SilencerOn,
+            weapon.WeaponGameplayAnimState,
+            weapon.WeaponGameplayAnimStateTimestamp,
+            weapon.AccuracyPenalty,
+            weapon.LastAccuracyUpdateTime,
+            weapon.RecoilIndex,
+            weapon.TimeSilencerSwitchComplete,
+            weapon.LastShotTime,
             activeWeapon is not null && weapon.Handle == activeWeapon.Handle);
     }
 
@@ -315,6 +398,17 @@ internal sealed class LiveApplyService(
         }
 
         return snapshot.ItemId == weaponItemId.Value;
+    }
+
+    private static bool ShouldTreatWeaponAsRefreshable(GearSlot slot, EconItemId itemId, string? classname)
+    {
+        if (slot is GearSlot.Rifle or GearSlot.Pistol or GearSlot.Knife)
+        {
+            return true;
+        }
+
+        return itemId == EconItemId.Taser
+               || string.Equals(classname, "weapon_taser", StringComparison.Ordinal);
     }
 
     private ushort? GetLoadoutItemDefinition(IPlayerController controller, CStrikeTeam team, LoadoutSlot slot)
@@ -336,6 +430,37 @@ internal sealed class LiveApplyService(
     private static bool IsValidClient(IGameClient client)
         => client is { IsValid: true, IsFakeClient: false, IsConnected: true, IsInGame: true };
 
+    private static bool TryReadAgentVoiceMetadata(
+        IEconItemDefinition definition,
+        out string voPrefix,
+        out bool hasFemaleVoice)
+    {
+        voPrefix = string.Empty;
+        hasFemaleVoice = false;
+
+        if (definition.GetAbsPtr() == nint.Zero)
+        {
+            return false;
+        }
+
+        var prefixPointer = Marshal.ReadIntPtr(definition.GetAbsPtr(), AgentVoPrefixOffset);
+        if (prefixPointer == nint.Zero)
+        {
+            return false;
+        }
+
+        voPrefix = Marshal.PtrToStringUTF8(prefixPointer) ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(voPrefix))
+        {
+            return false;
+        }
+
+        hasFemaleVoice = voPrefix.Contains("_fem", StringComparison.Ordinal)
+                         || string.Equals(voPrefix, "fbihrt_epic", StringComparison.Ordinal)
+                         || string.Equals(voPrefix, "swat_epic", StringComparison.Ordinal);
+        return true;
+    }
+
     private sealed record WeaponSnapshot(
         IBaseWeapon Weapon,
         EconItemId ItemId,
@@ -343,5 +468,17 @@ internal sealed class LiveApplyService(
         string Classname,
         int Clip,
         int ReserveAmmo,
+        int NextPrimaryAttackTick,
+        int NextSecondaryAttackTick,
+        CStrikeWeaponMode WeaponMode,
+        bool InReload,
+        bool SilencerOn,
+        WeaponGameplayAnimState WeaponGameplayAnimState,
+        float WeaponGameplayAnimStateTimestamp,
+        float AccuracyPenalty,
+        float LastAccuracyUpdateTime,
+        float RecoilIndex,
+        float TimeSilencerSwitchComplete,
+        float LastShotTime,
         bool WasActive);
 }

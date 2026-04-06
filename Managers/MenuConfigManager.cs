@@ -46,7 +46,7 @@ internal sealed class MenuConfigManager(
     public bool Init()
     {
         Current = LoadConfiguration();
-        logger.LogInformation(
+        logger.LogDebug(
             "WeaponSkin.Menu config loaded. WeaponApplyMode={weaponMode}, TeamApplyMode={teamMode}, UseClientCommandFallback={fallback}, WriteBothTeamsWhenSpectator={bothTeams}",
             Current.WeaponApplyMode,
             Current.TeamApplyMode,
@@ -96,7 +96,7 @@ internal sealed class MenuConfigManager(
 
         if (!File.Exists(configPath))
         {
-            logger.LogInformation("WeaponSkin.Menu config not found at {path}. Using defaults.", configPath);
+            logger.LogDebug("WeaponSkin.Menu config not found at {path}. Using defaults.", configPath);
             return MenuModuleConfig.Default;
         }
 
